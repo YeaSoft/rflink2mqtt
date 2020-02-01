@@ -76,6 +76,17 @@ class DeviceList {
 		for ( const [ key,  val ] of Object.entries( devices ) ) {
 			this.register( key, val );
 		}
+
+		// check for duplicate ids
+		let ids = this.devices.map( ( device ) => {
+			return device.id
+		} );
+		if ( ids.some( ( item, index ) => { return ids.indexOf( item ) != index; } ) ) {
+			this.empty();
+			log.error( "Duplicate device id detected." );
+			return false;
+		}
+		return true;
 	}
 
 	empty() {
@@ -168,7 +179,7 @@ class DeviceList {
 class BaseDevice {
 	constructor( dl, type, name, cfg ) {
 		this.dl = dl;
-		this.id = cfg.id;
+		this.id = cfg.id.replace(/[_-]/g,'').toUpperCase();
 		this.type = type;
 		this.name = name;
 		this.rfid = cfg.rfid;
@@ -333,6 +344,30 @@ class GatewayDevice extends BaseDevice {
 
 	getSubscriptions() {
 		return [ this.prefix + this.name + '/cmnd/#' ];
+	}
+
+	publishConfig( callback ) {
+		let config = {
+			"name": this.name,
+			"state_topic": "~STATE",
+			"availability_topic": "~LWT",
+			"force_update": true,
+			"payload_available": "Online",
+			"payload_not_available": "Offline",
+			"json_attributes_topic": "~HASS_STATE",
+			"unit_of_measurement": "msg/hour",
+			"value_template": "{{value_json['MsgRate']}}",
+			"icon": "mdi:information-outline",
+			"unique_id": this.id,
+			"device": {
+				"identifiers": [ this.id ],
+				"name": this.name,
+				"manufacturer":"Nodo Domotica",
+				"model": "RFLink Gateway",
+			},
+			"~": this.name + "/tele/"
+		}
+		gateway.mqtt.Publish( 'homeassistant/sensor/' + this.id + '/config', JSON.stringify( config ), true, callback );
 	}
 }
 
@@ -615,7 +650,9 @@ gateway.Start = function() {
 	}
 
 	// register devices
-	this.devices.load( this.config );
+	if ( ! this.devices.load( this.config ) ) {
+		return false;
+	}
 
 	// register event handler
 	this.on( 'rfonline', ( status ) => {
@@ -637,6 +674,7 @@ gateway.Start = function() {
 	if ( ! this.rflink ) {
 		this.rflink = rflink.Start( this );
 	}
+	return true;
 }
 
 gateway.Stop = function( callback ) {

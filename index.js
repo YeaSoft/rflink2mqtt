@@ -8,8 +8,9 @@
 'use strict';
 
 // Load application info and parse commandline options
-const opt		= require( './app-parser' ).Start();
-const log		= require( './app-logger' );
+const path		= require( 'path' );
+const opt		= require( path.join( __dirname, 'app-parser' ) );
+const log		= require( path.join( __dirname, 'app-logger' ) );
 
 // Load the gateway
 const gateway	= require( './gateway' );

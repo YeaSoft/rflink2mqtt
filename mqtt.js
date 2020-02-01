@@ -10,7 +10,7 @@ const path			= require( 'path' );
 const config		= require( 'config' );
 const mqtt			= require( 'mqtt' );
 
-// load application modeles
+// load application modules
 const log			= require( path.join( __dirname, 'app-logger' ) );
 
 // helper

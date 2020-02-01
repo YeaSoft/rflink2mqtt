@@ -12,7 +12,7 @@ const winston	= require( 'winston' );
 				  require( 'winston-daily-rotate-file' );
 				  require( 'winston-syslog' );
 const config	= require( 'config' );
-const opt		= require( './app-parser' );
+const opt		= require( path.join( __dirname, 'app-parser' ) );
 
 // the singleton logger provided by the module
 var logger = null;

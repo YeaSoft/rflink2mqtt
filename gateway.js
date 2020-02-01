@@ -10,10 +10,13 @@ const path			= require( 'path' );
 const config		= require( 'config' );
 const events		= require( 'events' );
 
-// load application modeles
+// load application modules
 const log			= require( path.join( __dirname, 'app-logger' ) );
 const mqtt			= require( path.join( __dirname, 'mqtt' ) );
 const rflink		= require( path.join( __dirname, 'rflink' ) );
+
+// load application info
+const appinfo		= require( path.join( __dirname, 'package.json' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
@@ -41,10 +44,10 @@ class DeviceList {
 		let device = undefined;
 		switch( cfg.class ) {
 			case 'gateway':
-				device = new GatewayDevice( name, cfg );
+				device = new GatewayDevice( this, name, cfg );
 				break;
 			case 'sensor':
-				device = new SensorDevice( name, cfg );
+				device = new SensorDevice( this, name, cfg );
 				break;
 			default:
 				log.error( "Cannot create '%s' - unsupperted device class '%s'", name, cfg.class );
@@ -124,7 +127,7 @@ class DeviceList {
 
 	setGatewayStatus( status ) {
 		this.gateway.status = status;
-		this.devices.forEach( device => { device.publishState(); } );
+		this.devices.forEach( device => { device.publishState(); device.publishHassState(); } );
 	}
 
 	publishOnline() {
@@ -143,12 +146,14 @@ class DeviceList {
 }
 
 // generic device class
-class Device {
-	constructor( type, name, cfg ) {
+class BaseDevice {
+	constructor( dl, type, name, cfg ) {
+		this.dl = dl;
 		this.id = cfg.id;
 		this.type = type;
 		this.name = name;
 		this.rfid = cfg.rfid;
+		this.friendly_name = cfg.friendly_name;
 		this.online = undefined;
 		this.datats = [];
 		this.birth = new Date().getTime();
@@ -188,7 +193,9 @@ class Device {
 					__fncall( callback, this, error );
 				}
 				else {
-					this.publishState( callback );
+					this.publishState( () => {
+						this.publishHassState( callback );
+					} );
 				}
 			} );
 		}
@@ -209,25 +216,42 @@ class Device {
 		this.publish( 'tele/STATE', JSON.stringify( state ), false, callback );
 	}
 
+	publishHassState( callback ) {
+		let hass_state = this.getHassState();
+		this.publish( 'tele/HASS_STATE', JSON.stringify( hass_state ), false, callback );
+	}
+
 	publish( topic, message, retain, callback ) {
 		gateway.mqtt.Publish( gateway.devices.gateway.prefix + this.name + '/' + topic, message, retain, callback );
 	}
 
 	getSubscriptions() { return [] }
 
-	getState( state ) {
-		if ( state === undefined ) {
-			state = {};
-		}
-		let now = new Date();
-		let uts = Math.floor( ( now.getTime() - this.birth ) / 1000 );
-		state.Time = now;
-		state.Uptime = this.secondsToDTHHMMSS( uts );
-		state.UptimeSec = uts;
-		state.MqttCount = this.count;
-		state.MsgRate = this.mrate;
-		state.ONLINE = this.online;
+	getState() {
+		let state = {};
+		let uts = this.getUpTime();
+		state[ 'Time' ] = new Date();
+		state[ 'Uptime' ] = this.secondsToDTHHMMSS( uts );
+		state[ 'UptimeSec' ] = uts;
+		state[ 'MqttCount' ] = this.count;
+		state[ 'MsgRate' ] = this.mrate;
+		state[ 'ONLINE' ] = this.online;
 		return state;
+	}
+
+	getHassState() {
+		let hass_state = {};
+		hass_state[ 'Model' ] = this.dl.gateway.status.identity;
+		hass_state[ 'Version' ] = this.dl.gateway.status.version;
+		hass_state[ 'Revision' ] = this.dl.gateway.status.revision;
+		hass_state[ 'Build' ] = this.dl.gateway.status.build;
+		hass_state[ 'Gateway' ] = appinfo.version;
+		return hass_state;
+	}
+
+	getUpTime() {
+		let now = new Date();
+		return  Math.floor( ( now.getTime() - this.birth ) / 1000 );
 	}
 
 	secondsToDTHHMMSS( seconds )  {
@@ -243,10 +267,20 @@ class Device {
 	}
 }
 
+class Device extends BaseDevice {
+	getHassState( hass_state ) {
+		hass_state = super.getHassState( hass_state );
+		hass_state[ 'Module' ] = this.rfid.split( ':' )[0];
+		hass_state[ 'Id' ] = this.rfid.split( ':' )[1];
+		hass_state[ 'Uptime' ] = this.secondsToDTHHMMSS( this.getUpTime() );
+		return hass_state;
+	}
+}
+
 // gateway device class
-class GatewayDevice extends Device {
-	constructor( name, config ) {
-		super( 'gateway', name, config );
+class GatewayDevice extends BaseDevice {
+	constructor( dl, name, config ) {
+		super( dl, 'gateway', name, config );
 		this.status = {};
 		if ( config.prefix ) {
 			this.prefix = config.prefix;
@@ -261,6 +295,21 @@ class GatewayDevice extends Device {
 
 	setGatewayOnline( online ) { this.setOnline( online ); }
 
+	getHassState() {
+		let hass_state = super.getHassState();
+		let gate_state = this.dl.gateway.status;
+		hass_state[ 'Uptime' ] = this.secondsToDTHHMMSS( this.getUpTime() );
+		hass_state[ 'Last Connected' ] = gate_state.lastOpened;
+		hass_state[ 'Last Message' ] = gate_state.lastMessage;
+		hass_state[ 'Last Error' ] = gate_state.lastError;
+		hass_state[ 'Connections' ] = gate_state.sessionCount || 0;
+		hass_state[ 'Messages' ] = gate_state.messageCount || 0;
+		hass_state[ 'Commands' ] = gate_state.commandCount || 0;
+		hass_state[ 'Confirmations' ] = gate_state.confirmCount || 0;
+		hass_state[ 'Errors' ] = gate_state.errorCount || 0;
+		return hass_state;
+	}
+
 	getSubscriptions() {
 		return [ this.prefix + this.name + '/cmnd/#' ];
 	}
@@ -268,13 +317,13 @@ class GatewayDevice extends Device {
 
 // sensor device class
 class SensorDevice extends Device {
-	constructor( name, cfg ) {
-		super( 'sensor', name, cfg );
+	constructor( dl, name, cfg ) {
+		super( dl, 'sensor', name, cfg );
 		this.features = ( cfg.features || '' ).toLowerCase().split(',');
 		this.expiration = cfg.expiration || 1800;
 	}
 
-	setNumericValue( status, key, val, base, mul, min, max ) {
+	setNumericValue( result, key, val, base, mul, min, max ) {
 		let value = undefined;
 		if ( ( value = parseInt( val, base ) ) != NaN ) {
 			if ( typeof min != 'undefined' ) {
@@ -286,12 +335,12 @@ class SensorDevice extends Device {
 			if ( typeof mul != 'undefined' ) {
 				value *= mul;
 			}
-			status[ key ] = value;
+			result[ key ] = value;
 		}
 		return value;
 	}
 
-	setTemperatureValue( status, key, val ) {
+	setTemperatureValue( result, key, val ) {
 		let value = undefined;
 		if ( ( value = parseInt( val, 16 ) ) != NaN ) {
 			if ( value > 32767 ) {
@@ -301,7 +350,7 @@ class SensorDevice extends Device {
 			else {
 				value /= 10;
 			}
-			status[ key ] = value;
+			result[ key ] = value;
 		}
 		return value;
 	}
@@ -309,7 +358,7 @@ class SensorDevice extends Device {
 	dispatchData( data, now ) {
 		this.updateMessageRate( data, now );
 		this.setOnline( true );
-		let status = {
+		let sensor = {
 			Time: data.Time,
 			msgrate: this.mrate
 		};
@@ -320,133 +369,134 @@ class SensorDevice extends Device {
 				switch( feature ) {
 					case 'temp':
 						// TEMP=9999 => Temperature celcius (hexadecimal), high bit contains negative sign, needs division by 10 (0xC0 = 192 decimal = 19.2 degrees)
-						this.setTemperatureValue( status, 'temperature', value );
+						this.setTemperatureValue( sensor, 'temperature', value );
 						break;
 					case 'hum':
 						// HUM=99 => Humidity (decimal value: 0-100 to indicate relative humidity in %)
-						this.setNumericValue( status, 'humidity', value, 10, 1, 0.0, 100.0 );
+						this.setNumericValue( sensor, 'humidity', value, 10, 1, 0.0, 100.0 );
 						break;
 					case 'baro':
 						// BARO=9999 => Barometric pressure (hexadecimal)
-						this.setNumericValue( status, 'pressure', value, 16 );
+						this.setNumericValue( sensor, 'pressure', value, 16 );
 						break;
 					case 'hstatus':
 						// HSTATUS=99 => 0=Normal, 1=Comfortable, 2=Dry, 3=Wet
-						if ( ( value = this.setNumericValue( status, 'hstatus', value, 10, 1, 0, 3 ) ) != undefined ) {
-							status.hstatus_readable = [ 'Normal','Comfortable','Dry','Wet' ][ value ];
+						if ( ( value = this.setNumericValue( sensor, 'hstatus', value, 10, 1, 0, 3 ) ) != undefined ) {
+							sensor.hstatus_readable = [ 'Normal','Comfortable','Dry','Wet' ][ value ];
 						}
 						break;
 					case 'bforecast':
 						// BFORECAST=99 => 0=No Info/Unknown, 1=Sunny, 2=Partly Cloudy, 3=Cloudy, 4=Rain
-						if ( ( value = this.setNumericValue( status, 'forecast', value, 10, 1, 0, 3 ) ) != undefined ) {
-							status.forecast_readable = [ 'No Info/Unknown','Sunny','Partly Cloudy','Cloudy' ][ value ];
+						if ( ( value = this.setNumericValue( sensor, 'forecast', value, 10, 1, 0, 3 ) ) != undefined ) {
+							sensor.forecast_readable = [ 'No Info/Unknown','Sunny','Partly Cloudy','Cloudy' ][ value ];
 						}
 						break;
 					case 'uv':
 						// UV=9999 => UV intensity (hexadecimal)
-						this.setNumericValue( status, 'uv', value, 16 );
+						this.setNumericValue( sensor, 'uv', value, 16 );
 						break;
 					case 'lux':
 						// LUX=9999 => Light intensity (hexadecimal)
-						this.setNumericValue( status, 'illuminance', value, 16 );
+						this.setNumericValue( sensor, 'illuminance', value, 16 );
 						break;
 					case 'bat':
 						// BAT=OK => Battery status indicator (OK/LOW)
-						status.battery = value.toLowerCase() === 'low';
+						sensor.battery = value.toLowerCase() === 'low';
 						break;
 					case 'rain':
 						// RAIN=1234 => Total rain in mm. (hexadecimal) 0x8d = 141 decimal = 14.1 mm (needs division by 10)
-						this.setNumericValue( status, 'rain', value, 16, 0.1 );
+						this.setNumericValue( sensor, 'rain', value, 16, 0.1 );
 						break;
 					case 'rainrate':
 						// RAINRATE=1234 => Rain rate in mm. (hexadecimal) 0x8d = 141 decimal = 14.1 mm (needs division by 10)
-						this.setNumericValue( status, 'rainrate', value, 16, 0.1 );
+						this.setNumericValue( sensor, 'rainrate', value, 16, 0.1 );
 						break;
 					case 'winsp':
 						// WINSP=9999 => Wind speed in km. p/h (hexadecimal) needs division by 10
-						this.setNumericValue( status, 'wind_speed', value, 16, 0.1 );
+						this.setNumericValue( sensor, 'wind_speed', value, 16, 0.1 );
 						break;
 					case 'awinsp':
 						// AWINSP=9999 => Average Wind speed in km. p/h (hexadecimal) needs division by 10
-						this.setNumericValue( status, 'wind_speed_average', value, 16, 0.1 );
+						this.setNumericValue( sensor, 'wind_speed_average', value, 16, 0.1 );
 						break;
 					case 'wings':
 						// WINGS=9999 => Wind Gust in km. p/h (hexadecimal)
-						this.setNumericValue( status, 'wind_gust', value, 16 );
+						this.setNumericValue( sensor, 'wind_gust', value, 16 );
 						break;
 					case 'windir':
 						// WINDIR=123 => Wind direction (integer value from 0-15) reflecting 0-360 degrees in 22.5 degree steps
-						this.setNumericValue( status, 'wind_direction', value, 10, 22.5 );
+						this.setNumericValue( sensor, 'wind_direction', value, 10, 22.5 );
 						break;
 					case 'winchl':
 						// WINCHL => wind chill (hexadecimal, see TEMP)
-						this.setTemperatureValue( status, 'wind_chill', value );
+						this.setTemperatureValue( sensor, 'wind_chill', value );
 						break;
 					case 'wintmp':
 						// WINTMP=1234 => Wind meter temperature reading (hexadecimal, see TEMP)
-						this.setTemperatureValue( status, 'wind_temperature', value );
+						this.setTemperatureValue( sensor, 'wind_temperature', value );
 						break;
 					case 'chime':
 						// CHIME=123 => Chime/Doorbell melody number
-						this.setNumericValue( status, 'chime', value, 10 );
+						this.setNumericValue( sensor, 'chime', value, 10 );
 						break;
 					case 'smokealert':
 						// SMOKEALERT=ON => ON/OFF
-						status.smokealert = value.toLowercase() == 'on';
+						sensor.smokealert = value.toLowercase() == 'on';
 						break;
 					case 'pir':
 						// PIR=ON => ON/OFF
-						status.motion = value.toLowercase() == 'on';
+						sensor.motion = value.toLowercase() == 'on';
 						break;
 					case 'co2':
 						// CO2=1234 => CO2 air quality
-						this.setNumericValue( status, 'co', value, 10 );
+						this.setNumericValue( sensor, 'co', value, 10 );
 						break;
 					case 'sound':
 						// SOUND=1234 => Noise level
-						this.setNumericValue( status, 'noise', value, 10 );
+						this.setNumericValue( sensor, 'noise', value, 10 );
 						break;
 					case 'kwatt':
 						// KWATT=9999 => KWatt (hexadecimal)
-						this.setNumericValue( status, 'power', value, 16, 1000 );
+						this.setNumericValue( sensor, 'power', value, 16, 1000 );
 						break;
 					case 'watt':
 						// WATT=9999 => Watt (hexadecimal)
-						this.setNumericValue( status, 'power', value, 16 );
+						this.setNumericValue( sensor, 'power', value, 16 );
 						break;
 					case 'current':
 						// CURRENT=1234 => Current phase 1
-						this.setNumericValue( status, 'current', value, 10 );
+						this.setNumericValue( sensor, 'current', value, 10 );
 						break;
 					case 'current2':
 						// CURRENT2=1234 => Current phase 2 (CM113)
-						this.setNumericValue( status, 'current_phase2', value, 10 );
+						this.setNumericValue( sensor, 'current_phase2', value, 10 );
 						break;
 					case 'current3':
 						// CURRENT3=1234 => Current phase 3 (CM113)
-						this.setNumericValue( status, 'current_phase3', value, 10 );
+						this.setNumericValue( sensor, 'current_phase3', value, 10 );
 						break;
 					case 'dist':
 						// DIST=1234 => Distance
-						this.setNumericValue( status, 'distance', value, 10 );
+						this.setNumericValue( sensor, 'distance', value, 10 );
 						break;
 					case 'meter':
 						// METER=1234 => Meter values (water/electricity etc.)
-						this.setNumericValue( status, 'meter', value, 10 );
+						this.setNumericValue( sensor, 'meter', value, 10 );
 						break;
 					case 'volt':
 						// VOLT=1234 => Voltage
-						this.setNumericValue( status, 'voltage', value, 10 );
+						this.setNumericValue( sensor, 'voltage', value, 10 );
 						break;
 					case 'rgbw':
 						// RGBW=9999 => Milight: provides 1 byte color and 1 byte brightness value
 						log.warn( "Still unknown output: '%s'", value );
-						status.rgbw = value;
+						sensor.rgbw = value;
 						break;
 				}
 			}
 		} );
-		this.publish( 'tele/SENSOR', JSON.stringify( status ) );
+		this.publish( 'tele/SENSOR', JSON.stringify( sensor ) );
+		this.publishState();
 	}
 
 	setGatewayOnline( online ) {
@@ -472,6 +522,7 @@ gateway.Start = function() {
 		name: 'rflink-01',
 		id: '',
 		prefix: '',
+		friendly_name: undefined,
 	}
 	let old = process.env.ALLOW_CONFIG_MUTATIONS;
 	process.env.ALLOW_CONFIG_MUTATIONS = true;

@@ -11,7 +11,7 @@ const config		= require( 'config' );
 const serialport	= require( 'serialport' );
 const readline		= require( '@serialport/parser-readline' );
 
-// load application modeles
+// load application modules
 const log			= require( path.join( __dirname, 'app-logger' ) );
 
 // helper

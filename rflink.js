@@ -16,7 +16,7 @@ const log			= require( path.join( __dirname, 'app-logger' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.call( th, args ); }
+function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 function decompose( elements ) {
 	let result = {};
@@ -37,23 +37,6 @@ function decompose( elements ) {
 	return result;
 }
 
-function setActive( active ) {
-	active = active ? true : false;
-	if ( rflink.status.active != active ) {
-		rflink.status.active = active;
-		rflink.gateway.emit( 'rfonline', rflink.status );
-	}
-	if ( active && !rflink.statusupdate ) {
-		let interval = Math.max( rflink.config.statusupdates * 1000, 10000 );
-		rflink.statusupdate = setInterval( () => {
-			rflink.gateway.emit( 'rfstatus', rflink.status );
-		}, interval );
-	} else if ( !active && rflink.statusupdate ) {
-		clearInterval( rflink.statusupdate );
-		rflink.statusupdate = undefined;
-	}
-}
-
 // module interface
 var rflink = {
 	ready: false,
@@ -61,7 +44,6 @@ var rflink = {
 	parser: undefined,
 	openretry: undefined,
 	keepalive: undefined,
-	statusupdate: undefined,
 	gateway: undefined,
 	status: {
 		active: false,
@@ -82,17 +64,21 @@ var rflink = {
 	config: {},
 };
 
-rflink.Start = function( gateway ) {
-	if ( this.openretry || this.port ) {
-		// already opening/open
-		return this;
+rflink.emit = function( ...args ) {
+	if ( this.gateway ) {
+		return this.gateway.emit.apply( this.gateway, args );
 	}
+}
 
-	log.info( "Starting up rflink interface" );
-	if ( gateway ) {
-		this.gateway = gateway;
+rflink.SetActive = function( active ) {
+	active = active ? true : false;
+	if ( this.status.active != active ) {
+		this.status.active = active;
+		this.emit( 'rfonline', this.status );
 	}
+}
 
+rflink.LoadConfig = function( gateway ) {
 	// default configuration
 	this.config = {
 		connection: {
@@ -104,7 +90,6 @@ rflink.Start = function( gateway ) {
 		},
 		retry: 60,
 		keepalive: 10,
-		statusupdates: 60,
 		delimiter: '\r\n',
 		encoding: 'utf8',
 		cansend: true,
@@ -116,11 +101,30 @@ rflink.Start = function( gateway ) {
 		config.util.extendDeep( this.config, config.get( 'rflink' ) );
 	}
 	process.env.ALLOW_CONFIG_MUTATIONS = old;
-
+	// plausibility checks
 	if ( !this.config.connection.port || this.config.connection.port.length == 0 ) {
 		log.error( "No serial port specified.");
+		return false;
+	}
+	// limit timings
+	this.config.retry = Math.max( this.config.retry, 5 );
+	this.config.keepalive = Math.max( this.config.keepalive, 5 );
+	// store gateway reference
+	if ( gateway ) this.gateway = gateway;
+	return true;
+}
+
+rflink.Start = function( gateway ) {
+	if ( this.openretry || this.port ) {
+		// already opening/open
+		return this;
+	}
+
+	log.info( "Starting up rflink interface..." );
+	if ( ! this.LoadConfig( gateway ) ) {
 		return undefined;
 	}
+
 
 	// prepare communication system
 	let s_opt = {
@@ -212,7 +216,7 @@ rflink.Start = function( gateway ) {
 		rflink.status.lastError = new Date();
 		rflink.status.errorCount++;
 		rflink.status.error = error;
-		this.gateway.emit( 'rferror', this.status );
+		this.emit( 'rferror', this.status );
 		this.Restart();
 	} );
 
@@ -221,7 +225,7 @@ rflink.Start = function( gateway ) {
 		log.info( "RFLink port %s successfully opened", this.config.connection.port );
 		this.status.lastOpened = new Date()
 		this.status.sessionCount++;
-		this.gateway.emit( 'rfopen', this.status );
+		this.emit( 'rfopen', this.status );
 	} );
 
 	this.parser.on( 'data', ( data ) => {
@@ -246,9 +250,9 @@ rflink.Start = function( gateway ) {
 			if ( node == '20' && pcnt === 0 ) {
 				this.status.identity = elements[0];
 				this.port.rfVersion();
-				setActive( true );
+				this.SetActive( true );
 				if ( ! this.keepalive ) {
-					let interval = Math.max( this.config.keepalive * 1000, 1000 );
+					let interval = this.config.keepalive * 1000;
 					this.keepalive = setInterval( () => {
 						if ( new Date() - this.status.lastMessage > interval * 3 ) {
 							log.warn( "Connection appears to be dead. Restarting..." );
@@ -327,11 +331,11 @@ rflink.Start = function( gateway ) {
 						break;
 					default:
 						name = elements.shift();
-						value = decompose( elements);
+						value = decompose( elements );
 						value.name = name;
 						value.Time = time.toISOString();
 						value.ts = time.getTime();
-						this.gateway.emit( 'rfdata', value );
+						this.emit( 'rfdata', value );
 						break;
 				}
 				break;
@@ -344,12 +348,12 @@ rflink.Start = function( gateway ) {
 	this.port.on( 'close', () => {
 		// close logic
 		log.info( "Serial port '%s' closed", this.config.connection.port );
-		setActive( false );
-		this.gateway.emit( 'rfclose', this.status );
+		this.SetActive( false );
+		this.emit( 'rfclose', this.status );
 	} );
 
 	// open it!
-	this.gateway.emit( 'rfstart', this.status );
+	this.emit( 'rfstart', this.status );
 	this.port.open();
 	return this;
 }
@@ -357,16 +361,16 @@ rflink.Start = function( gateway ) {
 rflink.Restart = function() {
 	if ( this.openretry || this.port ) {
 		this.Stop();
-		log.info( "Retrying to open serial port in %d second(s)",  Math.max( this.config.retry, 1 ) );
+		log.info( "Retrying to open serial port in %d second(s)",  this.config.retry );
 		this.openretry = setTimeout( () => {
 			delete this.openretry;
 			this.Start();
-		}, Math.max( this.config.retry * 1000, 1000 ) );
+		}, this.config.retry * 1000 );
 	}
 }
 
 rflink.Stop = function( callback ) {
-	setActive( false );
+	this.SetActive( false );
 	this.ready = false;
 	if ( this.openretry ) {
 		clearTimeout( this.openretry );
@@ -381,7 +385,7 @@ rflink.Stop = function( callback ) {
 		// ignore errors
 		if ( this.port ) delete this.port;
 		if ( this.parser ) delete this.parser;
-		this.gateway.emit( 'rfstop', this.status );
+		this.emit( 'rfstop', this.status );
 		__fncall( callback, this, error );
 	}
 

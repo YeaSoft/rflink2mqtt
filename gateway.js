@@ -20,7 +20,7 @@ const appinfo		= require( path.join( __dirname, 'package.json' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.call( th, args ); }
+function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 // device list class
 class DeviceList {
@@ -116,6 +116,34 @@ class DeviceList {
 		}
 	}
 
+	refreshAll() {
+		this.devices.forEach( device => {
+			device.publishOnline( () => {
+				device.publishState( () => {
+					device.publishHassState( () => {
+						device.publishConfig();
+					} );
+				} );
+			} );
+		} );
+	}
+
+	refreshOnline() {
+		this.devices.forEach( device => { device.publishOnline(); } );
+	}
+
+	refreshState() {
+		this.devices.forEach( device => { device.publishState(); } );
+	}
+
+	refreshHassState() {
+		this.devices.forEach( device => { device.publishHassState(); } );
+	}
+
+	refreshConfig() {
+		this.devices.forEach( device => { device.publishConfig(); } );
+	}
+
 	setOnline( online ) {
 		this.devices.forEach( device => { device.setOnline( online ); } );
 	}
@@ -123,15 +151,6 @@ class DeviceList {
 	setGatewayOnline( status ) {
 		this.gateway.status = status;
 		this.devices.forEach( device => { device.setGatewayOnline( status.active ); } );
-	}
-
-	setGatewayStatus( status ) {
-		this.gateway.status = status;
-		this.devices.forEach( device => { device.publishState(); device.publishHassState(); } );
-	}
-
-	publishOnline() {
-		this.devices.forEach( device => { device.publishOnline(); } );
 	}
 
 	getSubscriptions() {
@@ -220,6 +239,8 @@ class BaseDevice {
 		let hass_state = this.getHassState();
 		this.publish( 'tele/HASS_STATE', JSON.stringify( hass_state ), false, callback );
 	}
+
+	publishConfig() {}
 
 	publish( topic, message, retain, callback ) {
 		gateway.mqtt.Publish( gateway.devices.gateway.prefix + this.name + '/' + topic, message, retain, callback );
@@ -356,6 +377,7 @@ class SensorDevice extends Device {
 	}
 
 	dispatchData( data, now ) {
+		// sensors go online when they receive data
 		this.updateMessageRate( data, now );
 		this.setOnline( true );
 		let sensor = {
@@ -500,7 +522,8 @@ class SensorDevice extends Device {
 	}
 
 	setGatewayOnline( online ) {
-		// set the sensor offline when the gateway goes offline
+		// sensors go online when they receive data
+		// sensors go offline when the gateway goes offline
 		if ( ! online ) {
 			this.setOnline( false );
 		}
@@ -516,45 +539,95 @@ var gateway = {
 	config: {},
 }
 
-gateway.Start = function() {
+gateway.LoadConfig = function() {
 	// default configuration
 	this.config = {
 		name: 'rflink-01',
 		id: '',
 		prefix: '',
 		friendly_name: undefined,
+		updates: {
+			state: 60,
+			hass_state: 60,
+			config: 86400,
+		},
 	}
+	// merge user configurations with defaults
 	let old = process.env.ALLOW_CONFIG_MUTATIONS;
 	process.env.ALLOW_CONFIG_MUTATIONS = true;
 	if ( config.has ( 'gateway' ) ) {
 		config.util.extendDeep( this.config, config.get( 'gateway' ) );
 	}
 	process.env.ALLOW_CONFIG_MUTATIONS = old;
-
+	// plausibility checks
 	if ( !this.config.id ) {
 		log.error( "No gateway id specified." );
+		return false;
+	}
+	// limit status updates
+	this.config.updates.state = Math.max( this.config.updates.state, 10 );
+	this.config.updates.hass_state = Math.max( this.config.updates.hass_state, 60 );
+	this.config.updates.config = Math.max( this.config.updates.config, 300 );
+	return true;
+}
+
+gateway.TriggerUpdater = function() {
+	if ( this.rflink.status.active && this.mqtt.status.active ) {
+		// initial update all
+		this.devices.refreshAll();
+		// setup refreshers
+		if ( ! this.states_updater ) {
+			this.states_updater = setInterval( () => {
+				this.devices.refreshState();
+			}, this.config.updates.state * 1000 );
+		}
+		if ( ! this.hass_states_updater ) {
+			this.hass_states_updater = setInterval( () => {
+				this.devices.refreshHassState();
+			}, this.config.updates.hass_state * 1000 );
+		}
+		if ( ! this.config_updater ) {
+			this.config_updater = setInterval( () => {
+				this.devices.refreshConfig();
+			}, this.config.updates.config * 1000 );
+		}
+	}
+	else {
+		// delete refreshers
+		if ( this.states_updater ) {
+			clearInterval( this.states_updater );
+			delete this.states_updater;
+		}
+		if ( this.hass_states_updater ) {
+			clearInterval( this.hass_states_updater );
+			delete this.hass_states_updater;
+		}
+		if ( this.config_updater ) {
+			clearInterval( this.config_updater );
+			delete this.config_updater;
+		}
+	}
+}
+
+gateway.Start = function() {
+	if ( ! this.LoadConfig() ) {
 		return false;
 	}
 
 	// register devices
 	this.devices.load( this.config );
 
-	// register device handler
-	// this.emitter.on( 'rfstart', ( status ) => {} );
-	// this.emitter.on( 'rfopen', ( status ) => {} );
-
-	this.emitter.on( 'rfonline', ( status ) => {
+	// register event handler
+	this.on( 'rfonline', ( status ) => {
 		this.devices.setGatewayOnline( status );
+		this.TriggerUpdater();
 	} );
 
-	this.emitter.on( 'rfstatus', ( status ) => {
-		this.devices.setGatewayStatus( status );
+	this.on( 'mqonline', ( status ) => {
+		this.TriggerUpdater();
 	} );
 
-	// this.emitter.on( 'rfclose', ( status ) => {} );
-	// this.emitter.on( 'rfstop', ( status ) => {} );
-
-	this.emitter.on( 'rfdata', ( data ) => {
+	this.on( 'rfdata', ( data ) => {
 		this.devices.dispatchData( data );
 	} );
 

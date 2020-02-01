@@ -15,12 +15,13 @@ const log			= require( path.join( __dirname, 'app-logger' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.call( th, args ); }
+function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 // module interface
 var mqttclient = {
 	ready: false,
 	client: undefined,
+	gateway: undefined,
 	status: {
 		active: false,
 		lastConnect: undefined,
@@ -35,9 +36,21 @@ var mqttclient = {
 	},
 };
 
-mqttclient.Start = function( gateway ) {
-	log.info( "Starting up mqtt interface" );
+mqttclient.emit = function( ...args ) {
+	if ( this.gateway ) {
+		return this.gateway.emit.apply( this.gateway, args );
+	}
+}
 
+mqttclient.SetActive = function( active ) {
+	active = active ? true : false;
+	if ( this.status.active != active ) {
+		this.status.active = active;
+		this.emit( 'mqonline', this.status );
+	}
+}
+
+mqttclient.LoadConfig = function( gateway ) {
 	// default configuration
 	this.config = {
 		connection: {
@@ -56,7 +69,7 @@ mqttclient.Start = function( gateway ) {
 		config.util.extendDeep( this.config, config.get( 'mqtt' ) );
 	}
 	process.env.ALLOW_CONFIG_MUTATIONS = old;
-
+	// plausibility checks
 	if ( !this.config.connection.url ) {
 		// check if there is at least one server object in the options
 		let options = this.config.connection.options;
@@ -65,6 +78,21 @@ mqttclient.Start = function( gateway ) {
 			log.error( "No mqtt url specified.");
 			return undefined;
 		}
+	}
+	// store gateway reference
+	if ( gateway ) this.gateway = gateway;
+	return true;
+}
+
+mqttclient.Start = function( gateway ) {
+	if ( this.client ) {
+		// already opening/open
+		return this;
+	}
+
+	log.info( "Starting up mqtt interface..." );
+	if ( ! this.LoadConfig( gateway ) ) {
+		return undefined;
 	}
 
 	// setup communication objects
@@ -99,6 +127,7 @@ mqttclient.Start = function( gateway ) {
 				} );
 			}
 		} );
+		this.SetActive( true );
 	} );
 
 	// this.client.on( 'reconnect', () => {
@@ -107,18 +136,17 @@ mqttclient.Start = function( gateway ) {
 
 	this.client.on( 'close', () => {
 		log.info( "mqtt connection closed" );
-		this.status.active = false;
+		this.SetActive( false );
 	} );
 
 	this.client.on( 'disconnect', ( packet ) => {
 		log.info( "mqtt connection disconnected" );
-		this.status.active = false;
-
+		this.SetActive( false );
 	} );
 
 	this.client.on( 'offline', () => {
 		log.info( "mqtt connection offline" );
-		this.status.active = false;
+		this.SetActive( false );
 	} );
 
 	this.client.on( 'error', ( error ) => {

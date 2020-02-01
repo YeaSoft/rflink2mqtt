@@ -1,0 +1,31 @@
+{
+  "name": "rflink2mqtt",
+  "version": "0.0.1",
+  "description": "Gateway between RFLINK and MQTT",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://git.yeasoft.net/scm/yv/rflink2mqtt.git"
+  },
+  "keywords": [
+    "iot",
+    "mqtt",
+    "rflink",
+    "gateway"
+  ],
+  "author": "Leo Moll",
+  "license": "MIT",
+  "dependencies": {
+    "config": "^3.2.5",
+    "mqtt": "^3.0.0",
+    "node-getopt": "^0.3.2",
+    "properties": "^1.2.1",
+    "serialport": "^8.0.6",
+    "winston": "^3.2.1",
+    "winston-daily-rotate-file": "^4.4.1",
+    "winston-syslog": "^2.4.0"
+  }
+}

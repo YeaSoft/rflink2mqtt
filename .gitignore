@@ -1,0 +1,6 @@
+/node_modules
+/old
+/public/lp
+/sketches
+/package-lock.json
+.DS_Store

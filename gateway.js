@@ -183,7 +183,6 @@ class BaseDevice {
 		this.type = type;
 		this.name = name;
 		this.rfid = cfg.rfid;
-		this.friendly_name = cfg.friendly_name;
 		this.online = undefined;
 		this.datats = [];
 		this.birth = new Date().getTime();
@@ -253,6 +252,10 @@ class BaseDevice {
 
 	publishConfig() {}
 
+	publish_config_message( type, config, callback ) {
+		gateway.mqtt.Publish( 'homeassistant/' + type + '/' + config.unique_id + '/config', JSON.stringify( config ), true, callback );
+	}
+
 	publish( topic, message, retain, callback ) {
 		gateway.mqtt.Publish( gateway.devices.gateway.prefix + this.name + '/' + topic, message, retain, callback );
 	}
@@ -273,12 +276,34 @@ class BaseDevice {
 
 	getHassState() {
 		let hass_state = {};
-		hass_state[ 'Model' ] = this.dl.gateway.status.identity;
+		hass_state[ 'Model' ] = this.dl.gateway.status.model;
 		hass_state[ 'Version' ] = this.dl.gateway.status.version;
 		hass_state[ 'Revision' ] = this.dl.gateway.status.revision;
 		hass_state[ 'Build' ] = this.dl.gateway.status.build;
 		hass_state[ 'Gateway' ] = appinfo.version;
 		return hass_state;
+	}
+
+	getConfigTemplate( model, id_postfix, name_postfix ) {
+		id_postfix = id_postfix ? '_' + id_postfix : '';
+		name_postfix = name_postfix ? ' ' + name_postfix : id_postfix.replace( /_/g, ' ' );
+		return {
+			"name": this.name + name_postfix,
+			"state_topic": "~SENSOR",
+			"availability_topic": "~LWT",
+			"force_update": true,
+			"payload_available": "Online",
+			"payload_not_available": "Offline",
+			"json_attributes_topic": "~HASS_STATE",
+			"unique_id": this.id + id_postfix,
+			"device": {
+				"identifiers": [ this.id ],
+				"name": this.name,
+				"manufacturer":"Nodo Domotica",
+				"model": model,
+			},
+			"~": this.name + "/tele/"
+		}
 	}
 
 	getUpTime() {
@@ -347,27 +372,12 @@ class GatewayDevice extends BaseDevice {
 	}
 
 	publishConfig( callback ) {
-		let config = {
-			"name": this.name,
-			"state_topic": "~STATE",
-			"availability_topic": "~LWT",
-			"force_update": true,
-			"payload_available": "Online",
-			"payload_not_available": "Offline",
-			"json_attributes_topic": "~HASS_STATE",
-			"unit_of_measurement": "msg/hour",
-			"value_template": "{{value_json['MsgRate']}}",
-			"icon": "mdi:information-outline",
-			"unique_id": this.id,
-			"device": {
-				"identifiers": [ this.id ],
-				"name": this.name,
-				"manufacturer":"Nodo Domotica",
-				"model": "RFLink Gateway",
-			},
-			"~": this.name + "/tele/"
-		}
-		gateway.mqtt.Publish( 'homeassistant/sensor/' + this.id + '/config', JSON.stringify( config ), true, callback );
+		let config = this.getConfigTemplate( "RFLink Gateway" );
+		config[ "icon" ] = "mdi:information-outline";
+		config[ "state_topic" ] = "~STATE";
+		config[ "value_template" ] = "{{value_json['MsgRate']}}";
+		config[ "unit_of_measurement" ] = "Msgs/h";
+		this.publish_config_message( 'sensor', config, callback );
 	}
 }
 
@@ -563,6 +573,174 @@ class SensorDevice extends Device {
 			this.setOnline( false );
 		}
 	}
+
+	publishConfig( callback ) {
+		let model = this.model || this.rfid.split( ':' )[0] || 'Unknown';
+		// each sensor should have at least a status entity
+		let config = this.getConfigTemplate( model, 'status', 'Status' );
+		config[ "icon" ] = "mdi:information-outline";
+		config[ "value_template" ] = "{{value_json.msgrate}}";
+		config[ "unit_of_measurement" ] = "Msgs/h";
+		this.publish_config_message( 'sensor', config );
+		// create sensor/binary_sensor entity for each measuring
+		this.features.forEach( ( feature ) => {
+			let config = undefined;
+			switch ( feature ) {
+				case 'temp':
+					config = this.getConfigTemplate( model, 'Temperature' );
+					config[ "value_template" ] = "{{value_json.temperature}}";
+					config[ "unit_of_measurement" ] = "°C";
+					config[ "device_class" ] = "temperature";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'hum':
+					config = this.getConfigTemplate( model, 'Humidity' );
+					config[ "value_template" ] = "{{value_json.humidity}}";
+					config[ "unit_of_measurement" ] = "%";
+					config[ "device_class" ] = "humidity";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'baro':
+					config = this.getConfigTemplate( model, 'Pressure' );
+					config[ "value_template" ] = "{{value_json.pressure}}";
+					config[ "unit_of_measurement" ] = "hPa";
+					config[ "device_class" ] = "pressure";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'hstatus':
+					break;
+				case 'bforecast':
+					break;
+				case 'uv':
+					// config = this.getConfigTemplate( model, 'UV' );
+					// config[ "value_template" ] = "{{value_json.uv}}";
+					// config[ "unit_of_measurement" ] = "";
+					// this.publish_config_message( 'sensor', config );
+					break;
+				case 'lux':
+					config = this.getConfigTemplate( model, 'Illuminance' );
+					config[ "value_template" ] = "{{value_json.illuminance}}";
+					config[ "unit_of_measurement" ] = "lx";
+					config[ "device_class" ] = "illuminance";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'bat':
+					config = this.getConfigTemplate( model, 'Battery' );
+					config[ "value_template" ] = "{{value_json.battery}}";
+					config[ "payload_on" ] = true;
+					config[ "payload_off" ] = false;
+					config[ "device_class" ] = "battery";
+					this.publish_config_message( 'binary_sensor', config );
+					break;
+				case 'rain':
+					break;
+				case 'rainrate':
+					break;
+				case 'winsp':
+					// WINSP=9999 => Wind speed in km. p/h (hexadecimal) needs division by 10
+					//this.setNumericValue( sensor, 'wind_speed', value, 16, 0.1 );
+					break;
+				case 'awinsp':
+					// AWINSP=9999 => Average Wind speed in km. p/h (hexadecimal) needs division by 10
+					//this.setNumericValue( sensor, 'wind_speed_average', value, 16, 0.1 );
+					break;
+				case 'wings':
+					// WINGS=9999 => Wind Gust in km. p/h (hexadecimal)
+					//this.setNumericValue( sensor, 'wind_gust', value, 16 );
+					break;
+				case 'windir':
+					// WINDIR=123 => Wind direction (integer value from 0-15) reflecting 0-360 degrees in 22.5 degree steps
+					//this.setNumericValue( sensor, 'wind_direction', value, 10, 22.5 );
+					break;
+				case 'winchl':
+					config = this.getConfigTemplate( model, 'Wind_Chill' );
+					config[ "value_template" ] = "{{value_json.wind_chill}}";
+					config[ "unit_of_measurement" ] = "°C";
+					config[ "device_class" ] = "temperature";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'wintmp':
+					config = this.getConfigTemplate( model, 'Wind_Temperature' );
+					config[ "value_template" ] = "{{value_json.wind_temperature}}";
+					config[ "unit_of_measurement" ] = "°C";
+					config[ "device_class" ] = "temperature";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'chime':
+					// CHIME=123 => Chime/Doorbell melody number
+					//this.setNumericValue( sensor, 'chime', value, 10 );
+					break;
+				case 'smokealert':
+					config = this.getConfigTemplate( model, 'Smoke_Alert' );
+					config[ "icon" ] = "mdi:smoking";
+					config[ "value_template" ] = "{{value_json.smokealert}}";
+					config[ "payload_on" ] = true;
+					config[ "payload_off" ] = false;
+					config[ "device_class" ] = "smoke";
+					this.publish_config_message( 'binary_sensor', config );
+					break;
+				case 'pir':
+					config = this.getConfigTemplate( model, 'Motion' );
+					config[ "icon" ] = "mdi:motion-sensor";
+					config[ "value_template" ] = "{{value_json.motion}}";
+					config[ "payload_on" ] = true;
+					config[ "payload_off" ] = false;
+					config[ "device_class" ] = "motion";
+					this.publish_config_message( 'binary_sensor', config );
+					break;
+				case 'co2':
+					// CO2=1234 => CO2 air quality
+					//this.setNumericValue( sensor, 'co', value, 10 );
+					break;
+				case 'sound':
+					config = this.getConfigTemplate( model, 'Noise_Level' );
+					config[ "icon" ] = "mdi:speaker-wireless";
+					config[ "value_template" ] = "{{value_json.noise}}";
+					config[ "unit_of_measurement" ] = "dB";
+					config[ "device_class" ] = "signal_strength";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'watt':
+				case 'kwatt':
+					config = this.getConfigTemplate( model, 'Power' );
+					config[ "icon" ] = "mdi:gauge";
+					config[ "value_template" ] = "{{value_json.power}}";
+					config[ "unit_of_measurement" ] = "W";
+					config[ "device_class" ] = "power";
+					this.publish_config_message( 'sensor', config );
+					break;
+				case 'current':
+					// CURRENT=1234 => Current phase 1
+					//this.setNumericValue( sensor, 'current', value, 10 );
+					break;
+				case 'current2':
+					// CURRENT2=1234 => Current phase 2 (CM113)
+					//this.setNumericValue( sensor, 'current_phase2', value, 10 );
+					break;
+				case 'current3':
+					// CURRENT3=1234 => Current phase 3 (CM113)
+					//this.setNumericValue( sensor, 'current_phase3', value, 10 );
+					break;
+				case 'dist':
+					// DIST=1234 => Distance
+					//this.setNumericValue( sensor, 'distance', value, 10 );
+					break;
+				case 'meter':
+					// METER=1234 => Meter values (water/electricity etc.)
+					//this.setNumericValue( sensor, 'meter', value, 10 );
+					break;
+				case 'volt':
+					// VOLT=1234 => Voltage
+					//this.setNumericValue( sensor, 'voltage', value, 10 );
+					break;
+				case 'rgbw':
+					// RGBW=9999 => Milight: provides 1 byte color and 1 byte brightness value
+					//log.warn( "Still unknown output: '%s'", value );
+					//sensor.rgbw = value;
+					break;
+			}
+		} );
+	}
 }
 
 // the gateway
@@ -580,7 +758,6 @@ gateway.LoadConfig = function() {
 		name: 'rflink-01',
 		id: '',
 		prefix: '',
-		friendly_name: undefined,
 		updates: {
 			state: 60,
 			hass_state: 60,

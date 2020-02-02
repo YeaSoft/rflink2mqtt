@@ -47,7 +47,7 @@ var rflink = {
 	gateway: undefined,
 	status: {
 		active: false,
-		identity: '',
+		model: '',
 		version: '',
 		revision: '',
 		build: '',
@@ -248,9 +248,13 @@ rflink.Start = function( gateway ) {
 		// startup phase
 		if ( ! this.status.active ) {
 			if ( node == '20' && pcnt === 0 ) {
-				this.status.identity = elements[0];
+				// store model name
+				this.status.model = elements[0].replace(/^[^-]*-/,'').trimLeft().trimRight();
+				if ( this.status.model.length < 6 ) {
+					this.status.model = elements[0];
+				}
+				// request version
 				this.port.rfVersion();
-				this.SetActive( true );
 				if ( ! this.keepalive ) {
 					let interval = this.config.keepalive * 1000;
 					this.keepalive = setInterval( () => {
@@ -264,6 +268,13 @@ rflink.Start = function( gateway ) {
 						}
 					}, interval );
 				}
+			}
+			if ( elements[0].split('=')[0] == 'VER' ) {
+				let ver = decompose( elements );
+				this.status.version = ver.ver;
+				this.status.revision = ver.rev;
+				this.status.build = ver.build;
+				this.SetActive( true );
 			}
 			return;
 		}

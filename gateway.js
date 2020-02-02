@@ -12,6 +12,7 @@ const events		= require( 'events' );
 
 // load application modules
 const log			= require( path.join( __dirname, 'app-logger' ) );
+const hass			= require( path.join( __dirname, 'hass' ) );
 const mqtt			= require( path.join( __dirname, 'mqtt' ) );
 const rflink		= require( path.join( __dirname, 'rflink' ) );
 
@@ -32,6 +33,7 @@ class DeviceList {
 
 	init( cfg ) {
 		cfg.class = 'gateway';
+		cfg.rfid = 'RFLink Gateway';
 		// this.empty();
 		this.gateway = this.register( cfg.name, cfg );
 	}
@@ -284,28 +286,6 @@ class BaseDevice {
 		return hass_state;
 	}
 
-	getConfigTemplate( model, id_postfix, name_postfix ) {
-		id_postfix = id_postfix ? '_' + id_postfix : '';
-		name_postfix = name_postfix ? ' ' + name_postfix : id_postfix.replace( /_/g, ' ' );
-		return {
-			"name": this.name + name_postfix,
-			"state_topic": "~SENSOR",
-			"availability_topic": "~LWT",
-			"force_update": true,
-			"payload_available": "Online",
-			"payload_not_available": "Offline",
-			"json_attributes_topic": "~HASS_STATE",
-			"unique_id": this.id + id_postfix,
-			"device": {
-				"identifiers": [ this.id ],
-				"name": this.name,
-				"manufacturer":"Nodo Domotica",
-				"model": model,
-			},
-			"~": this.name + "/tele/"
-		}
-	}
-
 	getUpTime() {
 		let now = new Date();
 		return  Math.floor( ( now.getTime() - this.birth ) / 1000 );
@@ -372,12 +352,7 @@ class GatewayDevice extends BaseDevice {
 	}
 
 	publishConfig( callback ) {
-		let config = this.getConfigTemplate( "RFLink Gateway" );
-		config[ "icon" ] = "mdi:information-outline";
-		config[ "state_topic" ] = "~STATE";
-		config[ "value_template" ] = "{{value_json['MsgRate']}}";
-		config[ "unit_of_measurement" ] = "Msgs/h";
-		this.publish_config_message( 'sensor', config, callback );
+		new hass.Sensor( this ).setIcon().setStateTopic( '~STATE' ).setValue( 'MsgRate' ).setUnit( "Msgs/h" ).publish( callback );
 	}
 }
 
@@ -575,168 +550,105 @@ class SensorDevice extends Device {
 	}
 
 	publishConfig( callback ) {
-		let model = this.model || this.rfid.split( ':' )[0] || 'Unknown';
 		// each sensor should have at least a status entity
-		let config = this.getConfigTemplate( model, 'status', 'Status' );
-		config[ "icon" ] = "mdi:information-outline";
-		config[ "value_template" ] = "{{value_json.msgrate}}";
-		config[ "unit_of_measurement" ] = "Msgs/h";
-		this.publish_config_message( 'sensor', config );
+		new hass.Sensor( this, 'Status' ).setIcon().setValue( 'msgrate' ).setUnit( 'Msgs/h' ).publish();
 		// create sensor/binary_sensor entity for each measuring
 		this.features.forEach( ( feature ) => {
-			let config = undefined;
 			switch ( feature ) {
 				case 'temp':
-					config = this.getConfigTemplate( model, 'Temperature' );
-					config[ "value_template" ] = "{{value_json.temperature}}";
-					config[ "unit_of_measurement" ] = "°C";
-					config[ "device_class" ] = "temperature";
-					this.publish_config_message( 'sensor', config );
+					new hass.Thermometer( this ).publish();
 					break;
 				case 'hum':
-					config = this.getConfigTemplate( model, 'Humidity' );
-					config[ "value_template" ] = "{{value_json.humidity}}";
-					config[ "unit_of_measurement" ] = "%";
-					config[ "device_class" ] = "humidity";
-					this.publish_config_message( 'sensor', config );
+					new hass.Hygrometer( this ).publish();
 					break;
 				case 'baro':
-					config = this.getConfigTemplate( model, 'Pressure' );
-					config[ "value_template" ] = "{{value_json.pressure}}";
-					config[ "unit_of_measurement" ] = "hPa";
-					config[ "device_class" ] = "pressure";
-					this.publish_config_message( 'sensor', config );
+					new hass.Barometer( this ).publish();
 					break;
 				case 'hstatus':
+					// HSTATUS=99 => 0=Normal, 1=Comfortable, 2=Dry, 3=Wet
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
 					break;
 				case 'bforecast':
+					// BFORECAST=99 => 0=No Info/Unknown, 1=Sunny, 2=Partly Cloudy, 3=Cloudy, 4=Rain
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
 					break;
 				case 'uv':
-					// config = this.getConfigTemplate( model, 'UV' );
-					// config[ "value_template" ] = "{{value_json.uv}}";
-					// config[ "unit_of_measurement" ] = "";
-					// this.publish_config_message( 'sensor', config );
+					new hass.Sensor( this, 'UV', 'Ultraviolet' ).setValue( 'uv' ).setIcon( 'mdi:white-balance-sunny' ).publish();
 					break;
 				case 'lux':
-					config = this.getConfigTemplate( model, 'Illuminance' );
-					config[ "value_template" ] = "{{value_json.illuminance}}";
-					config[ "unit_of_measurement" ] = "lx";
-					config[ "device_class" ] = "illuminance";
-					this.publish_config_message( 'sensor', config );
+					new hass.Photometer( this ).publish();
 					break;
 				case 'bat':
-					config = this.getConfigTemplate( model, 'Battery' );
-					config[ "value_template" ] = "{{value_json.battery}}";
-					config[ "payload_on" ] = true;
-					config[ "payload_off" ] = false;
-					config[ "device_class" ] = "battery";
-					this.publish_config_message( 'binary_sensor', config );
+					new hass.Battery( this ).publish();
 					break;
 				case 'rain':
+					new hass.Sensor( this, 'Rain' ).setValue( 'rain' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
 					break;
 				case 'rainrate':
+					new hass.Sensor( this, 'Rain_Rate' ).setValue( 'rainrate' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
 					break;
 				case 'winsp':
-					// WINSP=9999 => Wind speed in km. p/h (hexadecimal) needs division by 10
-					//this.setNumericValue( sensor, 'wind_speed', value, 16, 0.1 );
+					new hass.Sensor( this, 'Wind_Speed' ).setValue( 'wind_speed' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
 					break;
 				case 'awinsp':
-					// AWINSP=9999 => Average Wind speed in km. p/h (hexadecimal) needs division by 10
-					//this.setNumericValue( sensor, 'wind_speed_average', value, 16, 0.1 );
+					new hass.Sensor( this, 'Wind_Speed_Average' ).setValue( 'wind_speed_average' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
 					break;
 				case 'wings':
-					// WINGS=9999 => Wind Gust in km. p/h (hexadecimal)
-					//this.setNumericValue( sensor, 'wind_gust', value, 16 );
+					new hass.Sensor( this, 'Wind_Gust' ).setValue( 'wind_gust' ).setUnit( 'km/h' ).setIcon( 'mdi:sign-direction' ).publish();
 					break;
 				case 'windir':
-					// WINDIR=123 => Wind direction (integer value from 0-15) reflecting 0-360 degrees in 22.5 degree steps
-					//this.setNumericValue( sensor, 'wind_direction', value, 10, 22.5 );
+					new hass.Sensor( this, 'Wind_Direction' ).setValue( 'wind_direction' ).setUnit( '°' ).setIcon( 'mdi:sign-direction' ).publish();
 					break;
 				case 'winchl':
-					config = this.getConfigTemplate( model, 'Wind_Chill' );
-					config[ "value_template" ] = "{{value_json.wind_chill}}";
-					config[ "unit_of_measurement" ] = "°C";
-					config[ "device_class" ] = "temperature";
-					this.publish_config_message( 'sensor', config );
+					new hass.Thermometer( this, 'wind_chill', "Wind_Chill" ).publish();
 					break;
 				case 'wintmp':
-					config = this.getConfigTemplate( model, 'Wind_Temperature' );
-					config[ "value_template" ] = "{{value_json.wind_temperature}}";
-					config[ "unit_of_measurement" ] = "°C";
-					config[ "device_class" ] = "temperature";
-					this.publish_config_message( 'sensor', config );
+					new hass.Thermometer( this, 'wind_temperature', "Wind_Temperature" ).publish();
 					break;
 				case 'chime':
 					// CHIME=123 => Chime/Doorbell melody number
 					//this.setNumericValue( sensor, 'chime', value, 10 );
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
 					break;
 				case 'smokealert':
-					config = this.getConfigTemplate( model, 'Smoke_Alert' );
-					config[ "icon" ] = "mdi:smoking";
-					config[ "value_template" ] = "{{value_json.smokealert}}";
-					config[ "payload_on" ] = true;
-					config[ "payload_off" ] = false;
-					config[ "device_class" ] = "smoke";
-					this.publish_config_message( 'binary_sensor', config );
+					new hass.SmokeDetector( this ).setIcon( 'mdi:smoking' ).publish()
 					break;
 				case 'pir':
-					config = this.getConfigTemplate( model, 'Motion' );
-					config[ "icon" ] = "mdi:motion-sensor";
-					config[ "value_template" ] = "{{value_json.motion}}";
-					config[ "payload_on" ] = true;
-					config[ "payload_off" ] = false;
-					config[ "device_class" ] = "motion";
-					this.publish_config_message( 'binary_sensor', config );
+					new hass.MotionDetector( this ).setIcon( 'mdi:motion-senso' ).publish()
 					break;
 				case 'co2':
-					// CO2=1234 => CO2 air quality
-					//this.setNumericValue( sensor, 'co', value, 10 );
+					new hass.Sensor( this, 'CO2', "co2 Air Quality" ).setValue( 'co' ).setIcon( 'mdi:periodic-table-co2' ).publish();
 					break;
 				case 'sound':
-					config = this.getConfigTemplate( model, 'Noise_Level' );
-					config[ "icon" ] = "mdi:speaker-wireless";
-					config[ "value_template" ] = "{{value_json.noise}}";
-					config[ "unit_of_measurement" ] = "dB";
-					config[ "device_class" ] = "signal_strength";
-					this.publish_config_message( 'sensor', config );
+					new hass.SignalStrength( this, 'noise', "Noise_Level" ).setIcon( 'mdi:speaker-wireless' ).publish();
 					break;
 				case 'watt':
 				case 'kwatt':
-					config = this.getConfigTemplate( model, 'Power' );
-					config[ "icon" ] = "mdi:gauge";
-					config[ "value_template" ] = "{{value_json.power}}";
-					config[ "unit_of_measurement" ] = "W";
-					config[ "device_class" ] = "power";
-					this.publish_config_message( 'sensor', config );
+					new hass.Powermeter( this ).setIcon( 'mdi:gauge' ).publish();
 					break;
 				case 'current':
-					// CURRENT=1234 => Current phase 1
-					//this.setNumericValue( sensor, 'current', value, 10 );
+					new hass.Sensor( this, 'Current' ).setValue( 'current' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'current2':
-					// CURRENT2=1234 => Current phase 2 (CM113)
-					//this.setNumericValue( sensor, 'current_phase2', value, 10 );
+					new hass.Sensor( this, 'Current_P2', "Current Phase 2" ).setValue( 'current_phase2' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'current3':
-					// CURRENT3=1234 => Current phase 3 (CM113)
-					//this.setNumericValue( sensor, 'current_phase3', value, 10 );
+					new hass.Sensor( this, 'Current_P3', "Current Phase 3" ).setValue( 'current_phase3' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'dist':
-					// DIST=1234 => Distance
-					//this.setNumericValue( sensor, 'distance', value, 10 );
+					new hass.Sensor( this, 'Distance' ).setValue( 'distance' ).setIcon( 'mdi:map-marker-distance' ).publish();
 					break;
 				case 'meter':
-					// METER=1234 => Meter values (water/electricity etc.)
-					//this.setNumericValue( sensor, 'meter', value, 10 );
+					new hass.Sensor( this, 'Meter' ).setValue( 'meter' ).setIcon( 'mdi:gauge' ).publish();
 					break;
 				case 'volt':
-					// VOLT=1234 => Voltage
-					//this.setNumericValue( sensor, 'voltage', value, 10 );
+					new hass.Sensor( this, 'Voltage' ).setValue( 'voltage' ).setUnit( 'V' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'rgbw':
 					// RGBW=9999 => Milight: provides 1 byte color and 1 byte brightness value
 					//log.warn( "Still unknown output: '%s'", value );
 					//sensor.rgbw = value;
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
 					break;
 			}
 		} );

@@ -291,6 +291,8 @@ rflink.Start = function( gateway ) {
 				let time = new Date()
 				switch ( first[0] ) {
 					case 'PONG':
+						// do not count as received message
+						this.status.messageCount--;
 						break;
 					case 'DEBUG':
 						// TODO: do something...

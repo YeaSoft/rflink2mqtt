@@ -16,7 +16,7 @@ const log			= require( path.join( __dirname, 'app-logger' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
+function __fncall( th, cb, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 function decompose( elements ) {
 	let result = {};
@@ -45,6 +45,8 @@ var rflink = {
 	openretry: undefined,
 	keepalive: undefined,
 	gateway: undefined,
+	config: {},
+	commands: [],
 	status: {
 		active: false,
 		model: '',
@@ -61,7 +63,6 @@ var rflink = {
 		errorCount: 0,
 		deadCount: 0,
 	},
-	config: {},
 };
 
 rflink.emit = function( ...args ) {
@@ -162,6 +163,7 @@ rflink.Start = function( gateway ) {
 		} );
 	}
 	this.port.rfReboot = function() {
+		this.SetActive( false );
 		this.rfSend( '10;REBOOT;' );
 	}
 	this.port.rfPing = function() {
@@ -299,6 +301,7 @@ rflink.Start = function( gateway ) {
 						break;
 					case 'VER':
 						// version response
+						this.CompleteExecution();
 						value = decompose( elements );
 						this.status.version = value.ver;
 						this.status.revision = value.rev;
@@ -307,10 +310,12 @@ rflink.Start = function( gateway ) {
 					case 'RFDEBUG':
 					case 'RFUDEBUG':
 					case 'QRFDEBUG':
+						this.CompleteExecution();
 						// TODO: handle debug activation/deactivation
 						value = first[1];
 						break;
 					case 'RTS CLEANED':
+						this.CompleteExecution();
 						break;
 					case 'RECORD 00 CLEANED':
 					case 'RECORD 01 CLEANED':
@@ -328,19 +333,19 @@ rflink.Start = function( gateway ) {
 					case 'RECORD 13 CLEANED':
 					case 'RECORD 14 CLEANED':
 					case 'RECORD 15 CLEANED':
+						this.CompleteExecution();
 						break;
 					case 'RTSINVERT':
 					case 'RTSLONGTX':
 					case 'TRISTATEINVERT':
+						this.CompleteExecution();
 						value = first[1];
 						break;
 					case 'CMD UNKNOWN':
-						// ANSWER TO A 10;... wrong command
-						// TODO, trigger next command....
+						this.CompleteExecution( new Error( "Command unknown" ) );
 						break;
 					case 'OK':
-						// ANSWER TO A 10;... good command
-						// TODO, trigger next command....
+						this.CompleteExecution();
 						break;
 					default:
 						name = elements.shift();
@@ -371,6 +376,65 @@ rflink.Start = function( gateway ) {
 	return this;
 }
 
+rflink.SendRawCommand = function( command, callback ) {
+	if ( this.status.active ) {
+		log.debug( "Enqueing command '%s'", command );
+		this.commands.push( {
+			command: command,
+			callback: callback,
+		} );
+		this.status.commandCount++;
+		this.TriggerExecution();
+	}
+	else {
+		__fncall( this, callback, new Error( 'RFLink not available' ) );
+	}
+}
+
+rflink.TriggerExecution = function() {
+	if ( this.commands.length ) {
+		let cmd = this.commands[0];
+		if ( ! cmd.executing ) {
+			log.info( "Sending command '%s'", cmd.command );
+			cmd.executing = new Date();
+			this.port.write( `10;${cmd.command};\r\n`, ( error ) => {
+				if ( error ) {
+					// serious error - we will restart the connection
+					log.error( "Error writing command '%s' on serial port %s: %s", cmd.command, this.config.communication.port, error.message );
+					this.status.lastError = new Date();
+					this.status.errorCount++;
+					this.commands.shift();
+					__fncall( this, cmd.callback, error );
+					this.Restart();
+				}
+				else if ( cmd.command.toUpperCase() === 'REBOOT' ) {
+					// normally you get no confirmation for this command
+					this.CompleteExecution();
+				}
+			} );
+		}
+	}
+}
+
+rflink.CompleteExecution = function( error ) {
+	if ( this.commands.length ) {
+		let cmd = this.commands[0];
+		if ( cmd.executing ) {
+			log.debug( "Completing execution of command '%s'", cmd.command );
+			this.status.confirmCount++;
+			this.commands.shift();
+			__fncall( this, cmd.callback, error );
+		}
+		else {
+			log.warn( "CANARY: CompleteExecution without command in execution" );
+		}
+		this.TriggerExecution();
+	}
+	else {
+		log.warn( "CANARY: CompleteExecution without any commands in queue" );
+	}
+}
+
 rflink.Restart = function() {
 	if ( this.openretry || this.port ) {
 		this.Stop();
@@ -399,7 +463,7 @@ rflink.Stop = function( callback ) {
 		if ( this.port ) delete this.port;
 		if ( this.parser ) delete this.parser;
 		this.emit( 'rfstop', this.status );
-		__fncall( callback, this, error );
+		__fncall( this, callback, error );
 	}
 
 	if ( this.port ) {

@@ -15,7 +15,7 @@ const log			= require( path.join( __dirname, 'app-logger' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
+function __fncall( th, cb, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 // module interface
 var mqttclient = {
@@ -163,6 +163,7 @@ mqttclient.Start = function( gateway ) {
 		log.debug( "mqtt Message: '%s' '%s'", topic, message );
 		this.status.lastMessage = new Date();
 		this.status.dataCount++;
+		this.emit( 'mqmessage', topic, message );
 	} );
 
 	// this.client.on( 'packetsend', ( packet ) => {
@@ -208,11 +209,11 @@ mqttclient.Stop = function( callback ) {
 			}
 		}, () => {
 			delete this.client;
-			__fncall( callback, this );
+			__fncall( this, callback );
 		} );
 	}
 	else {
-		__fncall( callback, this );
+		__fncall( this, callback );
 	}
 }
 

@@ -21,7 +21,7 @@ const appinfo		= require( path.join( __dirname, 'package.json' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
+function __fncall( th, cb, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 // device list class
 class DeviceList {
@@ -221,7 +221,7 @@ class BaseDevice {
 			this.online = online;
 			this.publishOnline( ( error ) => {
 				if ( error ) {
-					__fncall( callback, this, error );
+					__fncall( this, callback, error );
 				}
 				else {
 					this.publishState( () => {
@@ -231,7 +231,7 @@ class BaseDevice {
 			} );
 		}
 		else {
-			__fncall( callback, this );
+			__fncall( this, callback );
 		}
 	}
 
@@ -757,6 +757,18 @@ gateway.Start = function() {
 		this.devices.dispatchData( data );
 	} );
 
+	this.on( 'mqmessage', ( topic, message ) => {
+		this.rflink.SendRawCommand( message.toString(), ( error ) => {
+			if ( error ) {
+				log.error( "Command '%s' returned '%s'", message, error.message );
+			}
+			else {
+				log.info( "Command '%s' returned OK", message );
+			}
+		} );
+
+	} )
+
 	if ( ! this.mqtt ) {
 		this.mqtt = mqtt.Start( this );
 	}
@@ -769,7 +781,7 @@ gateway.Start = function() {
 gateway.Stop = function( callback ) {
 	this.rflink = rflink.Stop( ( error ) => {
 		this.mqtt = mqtt.Stop( () => {
-			__fncall( callback, this );
+			__fncall( this, callback );
 		} );
 	} );
 }

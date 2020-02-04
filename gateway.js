@@ -770,10 +770,10 @@ gateway.Start = function() {
 	} )
 
 	if ( ! this.mqtt ) {
-		this.mqtt = mqtt.Start( this );
+		this.mqtt = mqtt.Start();
 	}
 	if ( ! this.rflink ) {
-		this.rflink = rflink.Start( this );
+		this.rflink = rflink.Start();
 	}
 	return true;
 }

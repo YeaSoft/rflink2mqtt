@@ -12,6 +12,7 @@ const mqtt			= require( 'mqtt' );
 
 // load application modules
 const log			= require( path.join( __dirname, 'app-logger' ) );
+const gateway		= require( path.join( __dirname, 'gateway' ) );
 
 // helper
 function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
@@ -21,7 +22,6 @@ function __fncall( th, cb, ...args) { if ( typeof cb === 'function' ) cb.apply( 
 var mqttclient = {
 	ready: false,
 	client: undefined,
-	gateway: undefined,
 	status: {
 		active: false,
 		lastConnect: undefined,
@@ -36,21 +36,15 @@ var mqttclient = {
 	},
 };
 
-mqttclient.emit = function( ...args ) {
-	if ( this.gateway ) {
-		return this.gateway.emit.apply( this.gateway, args );
-	}
-}
-
 mqttclient.SetActive = function( active ) {
 	active = active ? true : false;
 	if ( this.status.active != active ) {
 		this.status.active = active;
-		this.emit( 'mqonline', this.status );
+		gateawy.emit( 'mqonline', this.status );
 	}
 }
 
-mqttclient.LoadConfig = function( gateway ) {
+mqttclient.LoadConfig = function() {
 	// default configuration
 	this.config = {
 		connection: {
@@ -79,19 +73,17 @@ mqttclient.LoadConfig = function( gateway ) {
 			return undefined;
 		}
 	}
-	// store gateway reference
-	if ( gateway ) this.gateway = gateway;
 	return true;
 }
 
-mqttclient.Start = function( gateway ) {
+mqttclient.Start = function() {
 	if ( this.client ) {
 		// already opening/open
 		return this;
 	}
 
 	log.info( "Starting up mqtt interface..." );
-	if ( ! this.LoadConfig( gateway ) ) {
+	if ( ! this.LoadConfig() ) {
 		return undefined;
 	}
 
@@ -163,7 +155,7 @@ mqttclient.Start = function( gateway ) {
 		log.debug( "mqtt Message: '%s' '%s'", topic, message );
 		this.status.lastMessage = new Date();
 		this.status.dataCount++;
-		this.emit( 'mqmessage', topic, message );
+		gateawy.emit( 'mqmessage', topic, message );
 	} );
 
 	// this.client.on( 'packetsend', ( packet ) => {

@@ -56,7 +56,7 @@ class GatewayDevice extends BaseDevice {
 	}
 
 	publishConfig( callback ) {
-		new hass.Sensor( this ).setIcon().setValue( 'MsgRate' ).setUnit( "Msgs/h" ).publish( callback );
+		new hass.Gateway( this ).publish( callback );
 	}
 }
 

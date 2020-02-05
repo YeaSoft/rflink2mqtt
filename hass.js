@@ -63,7 +63,7 @@ class Gateway extends BaseConfig {
 	constructor( device, id_postfix, name_postfix ) {
 		super( device, 'sensor', id_postfix, name_postfix );
 		this.set( 'force_update', true );
-		this.setStateTopic( '~tele/SENSOR' ).setIcon( 'mdi:switch' );
+		this.setIcon( 'mdi:switch' );
 		this.setValue( 'MsgRate' ).setUnit( "Msgs/h" );
 	}
 }

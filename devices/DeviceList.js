@@ -113,7 +113,7 @@ class DeviceList {
 	dispatchData( data ) {
 		// still to consider if we may change the distribution method...
 		let now = new Date().getTime();
-		let key = `${data.name}:${data.id}`;
+		let key = data.switch ? `${data.name}:${data.id}:${data.switch}` : `${data.name}:${data.id}`;
 		let device = this.findmap[key];
 		if ( device ) {
 			device.dispatchData( data, now );

@@ -20,7 +20,51 @@ class SensorDevice extends Device {
 	constructor( dl, name, cfg ) {
 		super( dl, 'sensor', name, cfg );
 		this.features = ( cfg.features || '' ).toLowerCase().split(',');
-		this.expiration = cfg.expiration || 1800;
+		this.keymap = this._parse_map( cfg.keymap );
+		this.valuemap = this._parse_map( cfg.valuemap );
+		this.auto_off = cfg.auto_off;
+		this.auto_online = this._get_auto_online( cfg );
+		this.expiration = this._get_expiration( cfg );
+	}
+
+	_get_auto_online( cfg ) {
+		if ( typeof cfg.auto_online === 'boolean' ) {
+			return cfg.auto_online;
+		}
+		let auto_online_features = ['pir'];
+		return auto_online_features.filter( value => this.features.includes( value ) ).length > 0;
+
+	}
+
+	_get_expiration( cfg ) {
+		let expiration = parseInt( cfg.expiration );
+		if ( expiration != NaN ) {
+			return expiration;
+		}
+		return 1800;
+	}
+
+	_parse_map( input ) {
+		let retval = {};
+		if ( typeof input === 'string' ) {
+			input.split( ',' ).forEach( ( element ) => {
+				let parts = element.split( '=' );
+				if ( parts.length > 1 ) {
+					retval[ parts.shift() ] = parts.join( '=' );
+				}
+			} );
+		}
+		return retval;
+	}
+
+	_get_mapped_feature( feature ) {
+		return this.keymap[ feature ] || feature;
+	}
+
+	_get_mapped_value( data, feature ) {
+		let f = this.keymap[ feature ] || feature;
+		return this.valuemap[ data[ f ] ] || data[ f ];
+
 	}
 
 	setNumericValue( result, key, val, base, mul, min, max ) {
@@ -64,9 +108,8 @@ class SensorDevice extends Device {
 			msgrate: this.mrate
 		};
 		this.features.forEach( ( feature ) => {
-			let value = undefined;
-			if ( feature in data ) {
-				value = data[ feature ];
+			let value = this._get_mapped_value( data, feature );
+			if ( value !== undefined ) {
 				switch( feature ) {
 					case 'temp':
 						// TEMP=9999 => Temperature celcius (hexadecimal), high bit contains negative sign, needs division by 10 (0xC0 = 192 decimal = 19.2 degrees)
@@ -142,11 +185,11 @@ class SensorDevice extends Device {
 						break;
 					case 'smokealert':
 						// SMOKEALERT=ON => ON/OFF
-						sensor.smokealert = value.toLowercase() == 'on';
+						sensor.smokealert = value.toLowerCase() == 'on';
 						break;
 					case 'pir':
 						// PIR=ON => ON/OFF
-						sensor.motion = value.toLowercase() == 'on';
+						sensor.motion = value.toLowerCase() == 'on';
 						break;
 					case 'co2':
 						// CO2=1234 => CO2 air quality
@@ -201,7 +244,10 @@ class SensorDevice extends Device {
 	}
 
 	setGatewayOnline( online ) {
-		// sensors go online when they receive data
+		// sensors go online when they receive data or they are configured to go online when the gateway goes online
+		if ( online && this.auto_online ) {
+			this.setOnline( true );
+		}
 		// sensors go offline when the gateway goes offline
 		if ( ! online ) {
 			this.setOnline( false );
@@ -270,16 +316,17 @@ class SensorDevice extends Device {
 					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
 					break;
 				case 'smokealert':
-					new hass.SmokeDetector( this ).setIcon( 'mdi:smoking' ).publish()
+					new hass.SmokeDetector( this ).publish()
 					break;
 				case 'pir':
-					new hass.MotionDetector( this ).setIcon( 'mdi:motion-senso' ).publish()
+					new hass.MotionDetector( this ).publish()
 					break;
 				case 'co2':
 					new hass.Sensor( this, 'CO2', "co2 Air Quality" ).setValue( 'co' ).setIcon( 'mdi:periodic-table-co2' ).publish();
 					break;
 				case 'sound':
-					new hass.SignalStrength( this, 'noise', "Noise_Level" ).setIcon( 'mdi:speaker-wireless' ).publish();
+					// new hass.SignalStrength( this, 'noise', "Noise_Level" ).setIcon( 'mdi:speaker-wireless' ).publish();
+					new hass.SignalStrength( this, 'noise', "Noise_Level" ).publish();
 					break;
 				case 'watt':
 				case 'kwatt':

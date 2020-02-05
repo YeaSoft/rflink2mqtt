@@ -47,6 +47,12 @@ class BaseConfig {
 		return this;
 	}
 
+	unset( key ) {
+		if ( key in this.config ) {
+			delete this.config[ key ];
+		}
+	}
+
 	setIcon( icon ) { return this.set( 'icon', icon || "mdi:information-outline" ); }
 	setUnit( unit ) { return this.set( 'unit_of_measurement', unit ); }
 	setValue( valueKey ) { return this.set( 'value_template', `{{value_json.${valueKey}}}` ); }
@@ -58,6 +64,7 @@ class BaseConfig {
 	}
 }
 
+// generic sensors
 class Sensor extends BaseConfig {
 	constructor( device, id_postfix, name_postfix ) {
 		super( device, 'sensor', id_postfix, name_postfix );
@@ -68,10 +75,11 @@ class BinarySensor extends BaseConfig {
 	constructor( device, id_postfix, name_postfix ) {
 		super( device, 'binary_sensor', id_postfix, name_postfix );
 		this.set( 'payload_on', true );
-		this.set( 'payload_off', true );
+		this.set( 'payload_off', false );
 	}
 }
 
+// specific sensors
 class Thermometer extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Temperature", name_postfix );
@@ -124,6 +132,8 @@ class Battery extends BinarySensor {
 class SmokeDetector extends BinarySensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || 'Smoke_Detector', name_postfix );
+		let auto_off = parseInt( this.device.auto_off ) || 0;
+		if ( auto_off > 0 ) this.set( 'off_delay', auto_off );
 		this.setClass( 'smoke' ).setValue( value || 'smokealert' );
 	}
 }
@@ -131,6 +141,7 @@ class SmokeDetector extends BinarySensor {
 class MotionDetector extends BinarySensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || 'Motion', name_postfix );
+		if ( this.device.auto_off != 'none' ) this.set( 'off_delay', parseInt( this.device.auto_off ) || 1 );
 		this.setClass( 'motion' ).setValue( value || 'motion' );
 	}
 }

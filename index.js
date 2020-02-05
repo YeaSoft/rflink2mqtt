@@ -13,13 +13,24 @@ const opt		= require( path.join( __dirname, 'app-parser' ) );
 const log		= require( path.join( __dirname, 'app-logger' ) );
 
 // Load the gateway
-const gateway	= require( './gateway' );
+const gateway	= require( path.join( __dirname, 'gateway' ) );
+
+// helper functions
+function Shutdown( signal ) {
+	log.info( "Received " + signal + ". Initiating shutdown..." );
+	gateway.Stop( () => {
+		log.info( opt.GetAppInfo().name + " shut down." );
+		process.exit( 0 );
+	} );
+}
+
+// function Reload( signal ) {
+// 	log.info( "Received " + signal + ". Reloading configuration..." );
+// 	gateway.ReloadConfig();
+// }
 
 // show startup message
 opt.ShowTitle( log.info );
-
-// start the gateway
-gateway.Start();
 
 // register signal handlers
 process.on( 'SIGINT', function() {
@@ -40,16 +51,5 @@ process.on( 'SIGTERM', function() {
 // 	Reload( 'SIGHUP' );
 // } );
 
-// helper functions
-function Shutdown( signal ) {
-	log.info( "Received " + signal + ". Initiating shutdown..." );
-	gateway.Stop( () => {
-		log.info( opt.GetAppInfo().name + " shut down." );
-		process.exit( 0 );
-	} );
-}
-
-// function Reload( signal ) {
-// 	log.info( "Received " + signal + ". Reloading configuration..." );
-// 	gateway.ReloadConfig();
-// }
+// start the gateway
+gateway.Start();

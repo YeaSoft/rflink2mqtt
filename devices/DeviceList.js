@@ -16,6 +16,7 @@ const log			= require( path.join( path.dirname( __dirname ), 'app-logger' ) );
 // load device classes
 const GatewayDevice	= require( path.join( __dirname, 'GatewayDevice' ) );
 const SensorDevice	= require( path.join( __dirname, 'SensorDevice' ) );
+const CoverDevice = require( path.join( __dirname, 'CoverDevice' ) );
 
 // device list class
 class DeviceList {
@@ -23,6 +24,7 @@ class DeviceList {
 		this.devices = [];
 		this.findmap = {};
 		this.gateway = undefined;
+		this.dispatchCount = 0;
 	}
 
 	init( cfg ) {
@@ -44,6 +46,9 @@ class DeviceList {
 				break;
 			case 'sensor':
 				device = new SensorDevice( this, name, cfg );
+				break;
+			case 'cover':
+				device = new CoverDevice( this, name, cfg );
 				break;
 			default:
 				log.error( "Cannot create '%s' - unsupperted device class '%s'", name, cfg.class );
@@ -116,11 +121,18 @@ class DeviceList {
 		let key = data.switch ? `${data.name}:${data.id}:${data.switch}` : `${data.name}:${data.id}`;
 		let device = this.findmap[key];
 		if ( device ) {
+			this.dispatchCount++;
 			device.dispatchData( data, now );
 		}
 		if ( this.gateway ) {
 			this.gateway.dispatchData( data, now );
 		}
+	}
+
+	dispatchMessage( topic, message ) {
+		this.devices.forEach( device => {
+			device.dispatchMessage( topic, message.toString() );
+		} );
 	}
 
 	refreshAll() {

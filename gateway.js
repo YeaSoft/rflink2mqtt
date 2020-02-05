@@ -49,10 +49,15 @@ gateway.LoadConfig = function() {
 		config.util.extendDeep( this.config, config.get( 'gateway' ) );
 	}
 	process.env.ALLOW_CONFIG_MUTATIONS = old;
-	// plausibility checks
+	// plausibility checks and adpatations
 	if ( !this.config.id ) {
 		log.error( "No gateway id specified." );
 		return false;
+	}
+	if ( this.config.prefix ) {
+		if ( this.config.prefix.slice( -1 ) != '/' ) {
+			this.config.prefix += '/';
+		}
 	}
 	// limit status updates
 	this.config.updates.state = Math.max( this.config.updates.state, 10 );
@@ -124,15 +129,7 @@ gateway.Start = function() {
 	} );
 
 	this.on( 'mqmessage', ( topic, message ) => {
-		this.rflink.SendRawCommand( message.toString(), ( error ) => {
-			if ( error ) {
-				log.error( "Command '%s' returned '%s'", message, error.message );
-			}
-			else {
-				log.info( "Command '%s' returned OK", message );
-			}
-		} );
-
+		this.devices.dispatchMessage( topic, message );
 	} )
 
 	const mqtt			= require( path.join( __dirname, 'mqtt' ) );

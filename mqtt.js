@@ -155,7 +155,7 @@ mqttclient.Start = function() {
 		log.debug( "mqtt Message: '%s' '%s'", topic, message );
 		this.status.lastMessage = new Date();
 		this.status.dataCount++;
-		gateawy.emit( 'mqmessage', topic, message );
+		gateway.emit( 'mqmessage', topic, message );
 	} );
 
 	// this.client.on( 'packetsend', ( packet ) => {

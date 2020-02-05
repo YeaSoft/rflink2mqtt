@@ -32,12 +32,24 @@ class BaseDevice {
 		this.birth = new Date().getTime();
 		this.mrate = 0;
 		this.count = 0;
+		this.commands = [];
+		this.basetopic = gateway.config.prefix + this.name + '/';
 	}
 
 	dispatchData( data, now ) {
 		this.updateMessageRate( data, now );
+		this.processData( data, now );
 	}
 
+	dispatchMessage( topic, message ) {
+		let cmndtopic = `${this.basetopic}cmnd/`;
+		if ( topic.startsWith( cmndtopic ) ) {
+			let command = topic.substring( cmndtopic.length );
+			if ( this.commands.includes( command ) ) {
+				this.executeCommand( command, message );
+			}
+		}
+	}
 
 	updateMessageRate( data, now ) {
 		let last = now - 3600000;
@@ -77,7 +89,12 @@ class BaseDevice {
 		}
 	}
 
-	setGatewayOnline( online ) {}
+	setGatewayOnline( online ) {
+		this.setOnline( online );
+	}
+
+	executeCommand( command, message ) {}
+	processData( data, now ) {}
 
 	publishOnline( callback ) {
 		let message = this.online ? 'Online' : 'Offline';
@@ -101,10 +118,14 @@ class BaseDevice {
 	}
 
 	publish( topic, message, retain, callback ) {
-		mqtt.Publish( gateway.devices.gateway.prefix + this.name + '/' + topic, message, retain, callback );
+		mqtt.Publish( this.basetopic + topic, message, retain, callback );
 	}
 
-	getSubscriptions() { return [] }
+	getSubscriptions() {
+		let topics = []
+		this.commands.forEach( command => { topics.push( `${this.basetopic}cmnd/${command}` ); } );
+		return topics;
+	}
 
 	getState() {
 		let state = {};

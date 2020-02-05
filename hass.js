@@ -9,12 +9,7 @@
 const path			= require( 'path' );
 
 // load application modules
-const log			= require( path.join( __dirname, 'app-logger' ) );
 const mqtt			= require( path.join( __dirname, 'mqtt' ) );
-
-// helper
-function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( cb, th, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
 
 // hass config classes
 class BaseConfig {
@@ -25,12 +20,11 @@ class BaseConfig {
 		this.deviceclass = deviceclass;
 		this.config = {
 			"name": device.name + name_postfix,
-			"state_topic": "~SENSOR",
-			"availability_topic": "~LWT",
-			"force_update": true,
+			"state_topic": "~tele/STATE",
+			"availability_topic": "~tele/LWT",
 			"payload_available": "Online",
 			"payload_not_available": "Offline",
-			"json_attributes_topic": "~HASS_STATE",
+			"json_attributes_topic": "~tele/HASS_STATE",
 			"unique_id": device.id + id_postfix,
 			"device": {
 				"identifiers": [ device.id ],
@@ -38,7 +32,7 @@ class BaseConfig {
 				"manufacturer":"Nodo RadioFrequencyLink",
 				"model": device.model || device.rfid.split( ':' )[0] || 'Unknown',
 			},
-			"~": device.name + "/tele/"
+			"~": device.basetopic
 		}
 	}
 
@@ -64,16 +58,34 @@ class BaseConfig {
 	}
 }
 
+// conver
+class Cover extends BaseConfig {
+	constructor( device, id_postfix, name_postfix ) {
+		super( device, 'cover', id_postfix, name_postfix );
+		this.set( 'command_topic', "~cmnd/CONTROL" );
+		this.set( 'payload_open', 'UP' )
+		this.set( 'payload_close', 'DOWN' );
+		this.set( 'payload_stop', 'STOP' );
+		this.setValue( 'STATE' );
+		this.set( 'state_open', 'Open' );
+		this.set( 'state_closed', 'Closed' );
+	}
+}
+
 // generic sensors
 class Sensor extends BaseConfig {
 	constructor( device, id_postfix, name_postfix ) {
 		super( device, 'sensor', id_postfix, name_postfix );
+		this.set( 'state_topic', '~tele/SENSOR' );
+		this.set( 'force_update', true );
 	}
 }
 
 class BinarySensor extends BaseConfig {
 	constructor( device, id_postfix, name_postfix ) {
 		super( device, 'binary_sensor', id_postfix, name_postfix );
+		this.set( 'state_topic', '~tele/SENSOR' );
+		this.set( 'force_update', true );
 		this.set( 'payload_on', true );
 		this.set( 'payload_off', false );
 	}
@@ -148,6 +160,7 @@ class MotionDetector extends BinarySensor {
 
 var hass = {
 	BaseConfig: BaseConfig,
+	Cover: Cover,
 	Sensor: Sensor,
 	BinarySensor: BinarySensor,
 	Thermometer: Thermometer,

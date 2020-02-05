@@ -368,6 +368,10 @@ rflink.Start = function() {
 	return this;
 }
 
+rflink.SendCommand = function( rfid, command, callback ) {
+	this.SendRawCommand( rfid.replace( /:/g, ';') + ';' + command, callback );
+}
+
 rflink.SendRawCommand = function( command, callback ) {
 	if ( this.status.active ) {
 		log.debug( "Enqueing command '%s'", command );

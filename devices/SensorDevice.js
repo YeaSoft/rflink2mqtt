@@ -1,7 +1,8 @@
 // (c) 2020 YeaSoft Intl - Leo Moll
 //
 // This file implements the device class
-// representing the RFLink gateway itself
+// representing the majority of sensors
+// supported by RFLink
 
 // activate strict mode
 'use strict';
@@ -99,9 +100,8 @@ class SensorDevice extends Device {
 		return value;
 	}
 
-	dispatchData( data, now ) {
+	processData( data, now ) {
 		// sensors go online when they receive data
-		this.updateMessageRate( data, now );
 		this.setOnline( true );
 		let sensor = {
 			Time: data.Time,

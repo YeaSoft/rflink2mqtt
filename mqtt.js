@@ -40,7 +40,7 @@ mqttclient.SetActive = function( active ) {
 	active = active ? true : false;
 	if ( this.status.active != active ) {
 		this.status.active = active;
-		gateawy.emit( 'mqonline', this.status );
+		gateway.emit( 'mqonline', this.status );
 	}
 }
 

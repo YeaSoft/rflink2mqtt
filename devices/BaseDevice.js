@@ -36,6 +36,47 @@ class BaseDevice {
 		this.basetopic = gateway.config.prefix + this.name + '/';
 	}
 
+	// overridable: initialize will be called when the device is online for the first time
+	initialize() {}
+
+	// overridable: publishConfig will be called to publish a HASS configation message
+	publishConfig() {}
+
+	// overridable: executeCOmmand will be called when the device receives an mqtt command message
+	executeCommand( command, message ) {}
+
+	// overridable: processData will be called when the device gets data from the RFLink gateway
+	processData( data, now ) {}
+
+	// overridable: getState will be called for getting a valid name/tele/STATE payload (should be chained)
+	getState() {
+		let state = {};
+		let uts = this.getUpTime();
+		state[ 'Time' ] = new Date();
+		state[ 'Uptime' ] = this.secondsToDTHHMMSS( uts );
+		state[ 'UptimeSec' ] = uts;
+		state[ 'MqttCount' ] = this.count;
+		state[ 'MsgRate' ] = this.mrate;
+		state[ 'ONLINE' ] = this.online;
+		return state;
+	}
+
+	// overridable: getHassState will be called for getting a name/tele/HASS_STATE payload (should be chained)
+	getHassState() {
+		let hass_state = {};
+		hass_state[ 'Model' ] = this.dl.gateway.status.model;
+		hass_state[ 'Version' ] = this.dl.gateway.status.version;
+		hass_state[ 'Revision' ] = this.dl.gateway.status.revision;
+		hass_state[ 'Build' ] = this.dl.gateway.status.build;
+		hass_state[ 'Gateway' ] = appinfo.version;
+		return hass_state;
+	}
+
+	// overridable: setGatewayOnline will be called when the gateway changes the online state
+	setGatewayOnline( online ) {
+		this.setOnline( online );
+	}
+
 	dispatchData( data, now ) {
 		this.updateMessageRate( data, now );
 		this.processData( data, now );
@@ -89,13 +130,6 @@ class BaseDevice {
 		}
 	}
 
-	setGatewayOnline( online ) {
-		this.setOnline( online );
-	}
-
-	executeCommand( command, message ) {}
-	processData( data, now ) {}
-
 	publishOnline( callback ) {
 		let message = this.online ? 'Online' : 'Offline';
 		this.publish( 'tele/LWT', message, true, callback );
@@ -111,8 +145,6 @@ class BaseDevice {
 		this.publish( 'tele/HASS_STATE', JSON.stringify( hass_state ), false, callback );
 	}
 
-	publishConfig() {}
-
 	publish_config_message( type, config, callback ) {
 		mqtt.Publish( 'homeassistant/' + type + '/' + config.unique_id + '/config', JSON.stringify( config ), true, callback );
 	}
@@ -125,28 +157,6 @@ class BaseDevice {
 		let topics = []
 		this.commands.forEach( command => { topics.push( `${this.basetopic}cmnd/${command}` ); } );
 		return topics;
-	}
-
-	getState() {
-		let state = {};
-		let uts = this.getUpTime();
-		state[ 'Time' ] = new Date();
-		state[ 'Uptime' ] = this.secondsToDTHHMMSS( uts );
-		state[ 'UptimeSec' ] = uts;
-		state[ 'MqttCount' ] = this.count;
-		state[ 'MsgRate' ] = this.mrate;
-		state[ 'ONLINE' ] = this.online;
-		return state;
-	}
-
-	getHassState() {
-		let hass_state = {};
-		hass_state[ 'Model' ] = this.dl.gateway.status.model;
-		hass_state[ 'Version' ] = this.dl.gateway.status.version;
-		hass_state[ 'Revision' ] = this.dl.gateway.status.revision;
-		hass_state[ 'Build' ] = this.dl.gateway.status.build;
-		hass_state[ 'Gateway' ] = appinfo.version;
-		return hass_state;
 	}
 
 	getUpTime() {

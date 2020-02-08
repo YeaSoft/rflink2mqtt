@@ -28,78 +28,114 @@ class SensorDevice extends Device {
 		this.expiration = this._get_expiration( cfg );
 	}
 
-	_get_auto_online( cfg ) {
-		if ( typeof cfg.auto_online === 'boolean' ) {
-			return cfg.auto_online;
-		}
-		let auto_online_features = ['pir'];
-		return auto_online_features.filter( value => this.features.includes( value ) ).length > 0;
-
-	}
-
-	_get_expiration( cfg ) {
-		let expiration = parseInt( cfg.expiration );
-		if ( expiration != NaN ) {
-			return expiration;
-		}
-		return 1800;
-	}
-
-	_parse_map( input ) {
-		let retval = {};
-		if ( typeof input === 'string' ) {
-			input.split( ',' ).forEach( ( element ) => {
-				let parts = element.split( '=' );
-				if ( parts.length > 1 ) {
-					retval[ parts.shift() ] = parts.join( '=' );
-				}
-			} );
-		}
-		return retval;
-	}
-
-	_get_mapped_feature( feature ) {
-		return this.keymap[ feature ] || feature;
-	}
-
-	_get_mapped_value( data, feature ) {
-		let f = this.keymap[ feature ] || feature;
-		return this.valuemap[ data[ f ] ] || data[ f ];
-
-	}
-
-	setNumericValue( result, key, val, base, mul, min, max ) {
-		let value = undefined;
-		if ( ( value = parseInt( val, base ) ) != NaN ) {
-			if ( typeof min != 'undefined' ) {
-				value = Math.max( value, min );
+	// overridable: publishConfig will be called to publish a HASS configation message
+	publishConfig() {
+		// each sensor should have at least a status entity
+		new hass.Sensor( this, 'Status' ).setIcon().setValue( 'msgrate' ).setUnit( 'Msgs/h' ).publish();
+		// create sensor/binary_sensor entity for each measuring
+		this.features.forEach( ( feature ) => {
+			switch ( feature ) {
+				case 'temp':
+					new hass.Thermometer( this ).publish();
+					break;
+				case 'hum':
+					new hass.Hygrometer( this ).publish();
+					break;
+				case 'baro':
+					new hass.Barometer( this ).publish();
+					break;
+				case 'hstatus':
+					// HSTATUS=99 => 0=Normal, 1=Comfortable, 2=Dry, 3=Wet
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
+					break;
+				case 'bforecast':
+					// BFORECAST=99 => 0=No Info/Unknown, 1=Sunny, 2=Partly Cloudy, 3=Cloudy, 4=Rain
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
+					break;
+				case 'uv':
+					new hass.Sensor( this, 'UV', 'Ultraviolet' ).setValue( 'uv' ).setIcon( 'mdi:white-balance-sunny' ).publish();
+					break;
+				case 'lux':
+					new hass.Photometer( this ).publish();
+					break;
+				case 'bat':
+					new hass.Battery( this ).publish();
+					break;
+				case 'rain':
+					new hass.Sensor( this, 'Rain' ).setValue( 'rain' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
+					break;
+				case 'rainrate':
+					new hass.Sensor( this, 'Rain_Rate' ).setValue( 'rainrate' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
+					break;
+				case 'winsp':
+					new hass.Sensor( this, 'Wind_Speed' ).setValue( 'wind_speed' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
+					break;
+				case 'awinsp':
+					new hass.Sensor( this, 'Wind_Speed_Average' ).setValue( 'wind_speed_average' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
+					break;
+				case 'wings':
+					new hass.Sensor( this, 'Wind_Gust' ).setValue( 'wind_gust' ).setUnit( 'km/h' ).setIcon( 'mdi:sign-direction' ).publish();
+					break;
+				case 'windir':
+					new hass.Sensor( this, 'Wind_Direction' ).setValue( 'wind_direction' ).setUnit( '°' ).setIcon( 'mdi:sign-direction' ).publish();
+					break;
+				case 'winchl':
+					new hass.Thermometer( this, 'wind_chill', "Wind_Chill" ).publish();
+					break;
+				case 'wintmp':
+					new hass.Thermometer( this, 'wind_temperature', "Wind_Temperature" ).publish();
+					break;
+				case 'chime':
+					// CHIME=123 => Chime/Doorbell melody number
+					//this.setNumericValue( sensor, 'chime', value, 10 );
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
+					break;
+				case 'smokealert':
+					new hass.SmokeDetector( this ).publish()
+					break;
+				case 'pir':
+					new hass.MotionDetector( this ).publish()
+					break;
+				case 'co2':
+					new hass.Sensor( this, 'CO2', "co2 Air Quality" ).setValue( 'co' ).setIcon( 'mdi:periodic-table-co2' ).publish();
+					break;
+				case 'sound':
+					// new hass.SignalStrength( this, 'noise', "Noise_Level" ).setIcon( 'mdi:speaker-wireless' ).publish();
+					new hass.SignalStrength( this, 'noise', "Noise_Level" ).publish();
+					break;
+				case 'watt':
+				case 'kwatt':
+					new hass.Powermeter( this ).setIcon( 'mdi:gauge' ).publish();
+					break;
+				case 'current':
+					new hass.Sensor( this, 'Current' ).setValue( 'current' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
+					break;
+				case 'current2':
+					new hass.Sensor( this, 'Current_P2', "Current Phase 2" ).setValue( 'current_phase2' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
+					break;
+				case 'current3':
+					new hass.Sensor( this, 'Current_P3', "Current Phase 3" ).setValue( 'current_phase3' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
+					break;
+				case 'dist':
+					new hass.Sensor( this, 'Distance' ).setValue( 'distance' ).setIcon( 'mdi:map-marker-distance' ).publish();
+					break;
+				case 'meter':
+					new hass.Sensor( this, 'Meter' ).setValue( 'meter' ).setIcon( 'mdi:gauge' ).publish();
+					break;
+				case 'volt':
+					new hass.Sensor( this, 'Voltage' ).setValue( 'voltage' ).setUnit( 'V' ).setIcon( 'mdi:flash' ).publish();
+					break;
+				case 'rgbw':
+					// RGBW=9999 => Milight: provides 1 byte color and 1 byte brightness value
+					//log.warn( "Still unknown output: '%s'", value );
+					//sensor.rgbw = value;
+					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
+					break;
 			}
-			if ( typeof max != 'undefined' ) {
-				value = Math.min( value, max );
-			}
-			if ( typeof mul != 'undefined' ) {
-				value *= mul;
-			}
-			result[ key ] = value;
-		}
-		return value;
+		} );
 	}
 
-	setTemperatureValue( result, key, val ) {
-		let value = undefined;
-		if ( ( value = parseInt( val, 16 ) ) != NaN ) {
-			if ( value > 32767 ) {
-				value -= 32768;
-				value /= -10;
-			}
-			else {
-				value /= 10;
-			}
-			result[ key ] = value;
-		}
-		return value;
-	}
-
+	// overridable: processData will be called when the device gets data from the RFLink gateway
 	processData( data, now ) {
 		// sensors go online when they receive data
 		this.setOnline( true );
@@ -243,6 +279,7 @@ class SensorDevice extends Device {
 		this.publishState();
 	}
 
+	// overridable: setGatewayOnline will be called when the gateway changes the online state
 	setGatewayOnline( online ) {
 		// sensors go online when they receive data or they are configured to go online when the gateway goes online
 		if ( online && this.auto_online ) {
@@ -254,110 +291,76 @@ class SensorDevice extends Device {
 		}
 	}
 
-	publishConfig( callback ) {
-		// each sensor should have at least a status entity
-		new hass.Sensor( this, 'Status' ).setIcon().setValue( 'msgrate' ).setUnit( 'Msgs/h' ).publish();
-		// create sensor/binary_sensor entity for each measuring
-		this.features.forEach( ( feature ) => {
-			switch ( feature ) {
-				case 'temp':
-					new hass.Thermometer( this ).publish();
-					break;
-				case 'hum':
-					new hass.Hygrometer( this ).publish();
-					break;
-				case 'baro':
-					new hass.Barometer( this ).publish();
-					break;
-				case 'hstatus':
-					// HSTATUS=99 => 0=Normal, 1=Comfortable, 2=Dry, 3=Wet
-					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
-					break;
-				case 'bforecast':
-					// BFORECAST=99 => 0=No Info/Unknown, 1=Sunny, 2=Partly Cloudy, 3=Cloudy, 4=Rain
-					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
-					break;
-				case 'uv':
-					new hass.Sensor( this, 'UV', 'Ultraviolet' ).setValue( 'uv' ).setIcon( 'mdi:white-balance-sunny' ).publish();
-					break;
-				case 'lux':
-					new hass.Photometer( this ).publish();
-					break;
-				case 'bat':
-					new hass.Battery( this ).publish();
-					break;
-				case 'rain':
-					new hass.Sensor( this, 'Rain' ).setValue( 'rain' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
-					break;
-				case 'rainrate':
-					new hass.Sensor( this, 'Rain_Rate' ).setValue( 'rainrate' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
-					break;
-				case 'winsp':
-					new hass.Sensor( this, 'Wind_Speed' ).setValue( 'wind_speed' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
-					break;
-				case 'awinsp':
-					new hass.Sensor( this, 'Wind_Speed_Average' ).setValue( 'wind_speed_average' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
-					break;
-				case 'wings':
-					new hass.Sensor( this, 'Wind_Gust' ).setValue( 'wind_gust' ).setUnit( 'km/h' ).setIcon( 'mdi:sign-direction' ).publish();
-					break;
-				case 'windir':
-					new hass.Sensor( this, 'Wind_Direction' ).setValue( 'wind_direction' ).setUnit( '°' ).setIcon( 'mdi:sign-direction' ).publish();
-					break;
-				case 'winchl':
-					new hass.Thermometer( this, 'wind_chill', "Wind_Chill" ).publish();
-					break;
-				case 'wintmp':
-					new hass.Thermometer( this, 'wind_temperature', "Wind_Temperature" ).publish();
-					break;
-				case 'chime':
-					// CHIME=123 => Chime/Doorbell melody number
-					//this.setNumericValue( sensor, 'chime', value, 10 );
-					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
-					break;
-				case 'smokealert':
-					new hass.SmokeDetector( this ).publish()
-					break;
-				case 'pir':
-					new hass.MotionDetector( this ).publish()
-					break;
-				case 'co2':
-					new hass.Sensor( this, 'CO2', "co2 Air Quality" ).setValue( 'co' ).setIcon( 'mdi:periodic-table-co2' ).publish();
-					break;
-				case 'sound':
-					// new hass.SignalStrength( this, 'noise', "Noise_Level" ).setIcon( 'mdi:speaker-wireless' ).publish();
-					new hass.SignalStrength( this, 'noise', "Noise_Level" ).publish();
-					break;
-				case 'watt':
-				case 'kwatt':
-					new hass.Powermeter( this ).setIcon( 'mdi:gauge' ).publish();
-					break;
-				case 'current':
-					new hass.Sensor( this, 'Current' ).setValue( 'current' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
-					break;
-				case 'current2':
-					new hass.Sensor( this, 'Current_P2', "Current Phase 2" ).setValue( 'current_phase2' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
-					break;
-				case 'current3':
-					new hass.Sensor( this, 'Current_P3', "Current Phase 3" ).setValue( 'current_phase3' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
-					break;
-				case 'dist':
-					new hass.Sensor( this, 'Distance' ).setValue( 'distance' ).setIcon( 'mdi:map-marker-distance' ).publish();
-					break;
-				case 'meter':
-					new hass.Sensor( this, 'Meter' ).setValue( 'meter' ).setIcon( 'mdi:gauge' ).publish();
-					break;
-				case 'volt':
-					new hass.Sensor( this, 'Voltage' ).setValue( 'voltage' ).setUnit( 'V' ).setIcon( 'mdi:flash' ).publish();
-					break;
-				case 'rgbw':
-					// RGBW=9999 => Milight: provides 1 byte color and 1 byte brightness value
-					//log.warn( "Still unknown output: '%s'", value );
-					//sensor.rgbw = value;
-					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
-					break;
+	setNumericValue( result, key, val, base, mul, min, max ) {
+		let value = undefined;
+		if ( ( value = parseInt( val, base ) ) != NaN ) {
+			if ( typeof min != 'undefined' ) {
+				value = Math.max( value, min );
 			}
-		} );
+			if ( typeof max != 'undefined' ) {
+				value = Math.min( value, max );
+			}
+			if ( typeof mul != 'undefined' ) {
+				value *= mul;
+			}
+			result[ key ] = value;
+		}
+		return value;
+	}
+
+	setTemperatureValue( result, key, val ) {
+		let value = undefined;
+		if ( ( value = parseInt( val, 16 ) ) != NaN ) {
+			if ( value > 32767 ) {
+				value -= 32768;
+				value /= -10;
+			}
+			else {
+				value /= 10;
+			}
+			result[ key ] = value;
+		}
+		return value;
+	}
+
+	_get_auto_online( cfg ) {
+		if ( typeof cfg.auto_online === 'boolean' ) {
+			return cfg.auto_online;
+		}
+		let auto_online_features = ['pir'];
+		return auto_online_features.filter( value => this.features.includes( value ) ).length > 0;
+
+	}
+
+	_get_expiration( cfg ) {
+		let expiration = parseInt( cfg.expiration );
+		if ( expiration != NaN ) {
+			return expiration;
+		}
+		return 1800;
+	}
+
+	_parse_map( input ) {
+		let retval = {};
+		if ( typeof input === 'string' ) {
+			input.split( ',' ).forEach( ( element ) => {
+				let parts = element.split( '=' );
+				if ( parts.length > 1 ) {
+					retval[ parts.shift() ] = parts.join( '=' );
+				}
+			} );
+		}
+		return retval;
+	}
+
+	_get_mapped_feature( feature ) {
+		return this.keymap[ feature ] || feature;
+	}
+
+	_get_mapped_value( data, feature ) {
+		let f = this.keymap[ feature ] || feature;
+		return this.valuemap[ data[ f ] ] || data[ f ];
+
 	}
 }
 

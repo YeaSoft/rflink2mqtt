@@ -25,6 +25,12 @@ class GatewayDevice extends BaseDevice {
 		this.status = {};
 	}
 
+	// overridable: publishConfig will be called to publish a HASS configation message
+	publishConfig() {
+		new hass.Gateway( this ).publish();
+	}
+
+	// overridable: executeCOmmand will be called when the device receives an mqtt command message
 	executeCommand( command, message ) {
 		if ( command == 'RAW' ) {
 			log.info( "Sending raw command '%s'...", message );
@@ -39,6 +45,7 @@ class GatewayDevice extends BaseDevice {
 		}
 	}
 
+	// overridable: getHassState will be called for getting a name/tele/HASS_STATE payload (should be chained)
 	getHassState() {
 		let hass_state = super.getHassState();
 		let gate_state = this.status;
@@ -53,10 +60,6 @@ class GatewayDevice extends BaseDevice {
 		hass_state[ 'Confirmations' ] = gate_state.confirmCount || 0;
 		hass_state[ 'Errors' ] = gate_state.errorCount || 0;
 		return hass_state;
-	}
-
-	publishConfig( callback ) {
-		new hass.Gateway( this ).publish( callback );
 	}
 }
 

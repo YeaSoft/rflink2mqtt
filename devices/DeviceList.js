@@ -25,6 +25,7 @@ class DeviceList {
 		this.findmap = {};
 		this.gateway = undefined;
 		this.dispatchCount = 0;
+		this.inited = false;
 	}
 
 	init( cfg ) {
@@ -169,7 +170,17 @@ class DeviceList {
 
 	setGatewayOnline( status ) {
 		this.gateway.status = status;
-		this.devices.forEach( device => { device.setGatewayOnline( status.active ); } );
+		if ( this.inited ) {
+			this.devices.forEach( device => { device.setGatewayOnline( status.active ); } );
+		}
+		else if ( status.active ) {
+			// first time online
+			this.inited = true;
+			this.devices.forEach( device => {
+				device.initialize();
+				device.setGatewayOnline( status.active );
+			} );
+		}
 	}
 
 	getSubscriptions() {

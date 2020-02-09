@@ -16,9 +16,6 @@ const gateway		= require( path.join( path.dirname( __dirname ), 'gateway' ) );
 // load application info
 const appinfo		= require( path.join( path.dirname( __dirname ), 'package.json' ) );
 
-// helper
-function __fncall( th, cb, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
-
 // generic base device class
 class BaseDevice {
 	constructor( dl, type, name, cfg ) {
@@ -37,12 +34,12 @@ class BaseDevice {
 	}
 
 	// overridable: initialize will be called when the device is online for the first time
-	initialize() {}
+	initialize( callback ) { this.call( callback ); }
 
 	// overridable: publishConfig will be called to publish a HASS configation message
 	publishConfig() {}
 
-	// overridable: executeCOmmand will be called when the device receives an mqtt command message
+	// overridable: executeCommand will be called when the device receives an mqtt command message
 	executeCommand( command, message ) {}
 
 	// overridable: processData will be called when the device gets data from the RFLink gateway
@@ -116,7 +113,7 @@ class BaseDevice {
 			this.online = online;
 			this.publishOnline( ( error ) => {
 				if ( error ) {
-					__fncall( this, callback, error );
+					this.call( callback, error );
 				}
 				else {
 					this.publishState( () => {
@@ -126,7 +123,7 @@ class BaseDevice {
 			} );
 		}
 		else {
-			__fncall( this, callback );
+			this.call( callback );
 		}
 	}
 
@@ -137,7 +134,12 @@ class BaseDevice {
 
 	publishState( callback ) {
 		let state = this.getState();
-		this.publish( 'tele/STATE', JSON.stringify( state ), false, callback );
+		if ( state === undefined ) {
+			this.call( callback );
+		}
+		else {
+			this.publish( 'tele/STATE', JSON.stringify( state ), false, callback );
+		}
 	}
 
 	publishHassState( callback ) {
@@ -162,6 +164,12 @@ class BaseDevice {
 	getUpTime() {
 		let now = new Date();
 		return  Math.floor( ( now.getTime() - this.birth ) / 1000 );
+	}
+
+	call( callback, ...args) {
+		if ( typeof callback === 'function' ) {
+			callback.apply( this, args );
+		}
 	}
 
 	secondsToDTHHMMSS( seconds )  {

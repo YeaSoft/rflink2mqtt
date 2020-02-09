@@ -19,18 +19,18 @@ class BaseConfig {
 		this.device = device;
 		this.deviceclass = deviceclass;
 		this.config = {
-			"name": device.name + name_postfix,
-			"state_topic": "~tele/STATE",
-			"availability_topic": "~tele/LWT",
-			"payload_available": "Online",
-			"payload_not_available": "Offline",
-			"json_attributes_topic": "~tele/HASS_STATE",
-			"unique_id": device.id + id_postfix,
-			"device": {
-				"identifiers": [ device.id ],
-				"name": device.name,
-				"manufacturer":"Nodo RadioFrequencyLink",
-				"model": device.model || device.rfid.split( ':' )[0] || 'Unknown',
+			name: device.name + name_postfix,
+			state_topic: "~tele/STATE",
+			availability_topic: "~tele/LWT",
+			payload_available: "Online",
+			payload_not_available: "Offline",
+			json_attributes_topic: "~tele/HASS_STATE",
+			unique_id: device.id + id_postfix,
+			device: {
+				identifiers: [ device.id ],
+				name: device.name,
+				manufacturer: device.manufacturer || "Nodo RadioFrequencyLink",
+				model: device.model || device.rfid.split( ':' )[0] || "Unknown",
 			},
 			"~": device.basetopic
 		}
@@ -49,7 +49,7 @@ class BaseConfig {
 
 	setIcon( icon ) { return this.set( 'icon', icon || "mdi:information-outline" ); }
 	setUnit( unit ) { return this.set( 'unit_of_measurement', unit ); }
-	setValue( valueKey ) { return this.set( 'value_template', `{{value_json.${valueKey}}}` ); }
+	setJsonValueTemplate( valueKey ) { return this.set( 'value_template', `{{value_json.${valueKey}}}` ); }
 	setClass( deviceClass ) { return this.set( 'device_class', deviceClass ); }
 	setStateTopic( topic ) { return this.set( 'state_topic', topic ); }
 
@@ -64,7 +64,7 @@ class Gateway extends BaseConfig {
 		super( device, 'sensor', id_postfix, name_postfix );
 		this.set( 'force_update', true );
 		this.setIcon( 'mdi:switch' );
-		this.setValue( 'MsgRate' ).setUnit( "Msgs/h" );
+		this.setJsonValueTemplate( 'MsgRate' ).setUnit( "Msgs/h" );
 	}
 }
 
@@ -72,13 +72,27 @@ class Gateway extends BaseConfig {
 class Cover extends BaseConfig {
 	constructor( device, id_postfix, name_postfix ) {
 		super( device, 'cover', id_postfix, name_postfix );
+		this.set( 'optimistic', false );
 		this.set( 'command_topic', "~cmnd/CONTROL" );
 		this.set( 'payload_open', 'UP' )
 		this.set( 'payload_close', 'DOWN' );
 		this.set( 'payload_stop', 'STOP' );
-		this.setValue( 'STATE' );
-		this.set( 'state_open', 'Open' );
-		this.set( 'state_closed', 'Closed' );
+		if ( device.advanced ) {
+			// advanced mode
+			this.setJsonValueTemplate( 'POSITION' );
+			this.unset( 'state_topic' );
+			this.set( 'set_position_topic', "~cmnd/POSITION" );
+			this.set( 'position_topic', "~tele/STATE" );
+			this.set( 'position_open', 100 );
+			this.set( 'position_closed', 0 );
+			this.set( 'retain', true );
+		}
+		else {
+			// simple mode
+			this.setJsonValueTemplate( 'STATE' );
+			this.set( 'state_open', 'Open' );
+			this.set( 'state_closed', 'Closed' );
+		}
 	}
 }
 
@@ -105,49 +119,49 @@ class BinarySensor extends BaseConfig {
 class Thermometer extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Temperature", name_postfix );
-		this.setClass( 'temperature' ).setUnit( "°C" ).setValue( value || 'temperature' );
+		this.setClass( 'temperature' ).setUnit( "°C" ).setJsonValueTemplate( value || 'temperature' );
 	}
 }
 
 class Hygrometer extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Humidity", name_postfix );
-		this.setClass( 'humidity' ).setUnit( "%" ).setValue( value || 'humidity' );
+		this.setClass( 'humidity' ).setUnit( "%" ).setJsonValueTemplate( value || 'humidity' );
 	}
 }
 
 class Barometer extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Pressure", name_postfix );
-		this.setClass( 'pressure' ).setUnit( "hPa" ).setValue( value || 'pressure' );
+		this.setClass( 'pressure' ).setUnit( "hPa" ).setJsonValueTemplate( value || 'pressure' );
 	}
 }
 
 class Photometer extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Luminosity", name_postfix );
-		this.setClass( 'illuminance' ).setUnit( "lx" ).setValue( value || 'illuminance' );
+		this.setClass( 'illuminance' ).setUnit( "lx" ).setJsonValueTemplate( value || 'illuminance' );
 	}
 }
 
 class Powermeter extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Power", name_postfix );
-		this.setClass( 'power' ).setUnit( "W" ).setValue( value || 'power' );
+		this.setClass( 'power' ).setUnit( "W" ).setJsonValueTemplate( value || 'power' );
 	}
 }
 
 class SignalStrength extends Sensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || "Signal_Strength", name_postfix );
-		this.setClass( 'signal_strength' ).setUnit( "dB" ).setValue( value || 'signal_strength' );
+		this.setClass( 'signal_strength' ).setUnit( "dB" ).setJsonValueTemplate( value || 'signal_strength' );
 	}
 }
 
 class Battery extends BinarySensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || 'Battery', name_postfix );
-		this.setClass( 'battery' ).setValue( value || 'battery' );
+		this.setClass( 'battery' ).setJsonValueTemplate( value || 'battery' );
 	}
 }
 
@@ -156,7 +170,7 @@ class SmokeDetector extends BinarySensor {
 		super( device, id_postfix || 'Smoke_Detector', name_postfix );
 		let auto_off = parseInt( this.device.auto_off ) || 0;
 		if ( auto_off > 0 ) this.set( 'off_delay', auto_off );
-		this.setClass( 'smoke' ).setValue( value || 'smokealert' );
+		this.setClass( 'smoke' ).setJsonValueTemplate( value || 'smokealert' );
 	}
 }
 
@@ -164,7 +178,7 @@ class MotionDetector extends BinarySensor {
 	constructor( device, value, id_postfix, name_postfix ) {
 		super( device, id_postfix || 'Motion', name_postfix );
 		if ( this.device.auto_off != 'none' ) this.set( 'off_delay', parseInt( this.device.auto_off ) || 1 );
-		this.setClass( 'motion' ).setValue( value || 'motion' );
+		this.setClass( 'motion' ).setJsonValueTemplate( value || 'motion' );
 	}
 }
 

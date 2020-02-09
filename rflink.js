@@ -88,6 +88,7 @@ rflink.LoadConfig = function() {
 		delimiter: '\r\n',
 		encoding: 'utf8',
 		cansend: true,
+		send_latency: 20,
 	}
 	// merge user configurations with defaults
 	let old = process.env.ALLOW_CONFIG_MUTATIONS;
@@ -368,6 +369,13 @@ rflink.Start = function() {
 	return this;
 }
 
+/**
+ * Sends a command to a specified device
+ *
+ * @param {string} rfid identification of the target device
+ * @param {string} command command string to send
+ * @param {function} callback optional callback function( error, epoch_msec, acktime_msec ) that will be called as soon as the command has been completed
+ */
 rflink.SendCommand = function( rfid, command, callback ) {
 	this.SendRawCommand( rfid.replace( /:/g, ';') + ';' + command, callback );
 }
@@ -383,7 +391,7 @@ rflink.SendRawCommand = function( command, callback ) {
 		this.TriggerExecution();
 	}
 	else {
-		__fncall( this, callback, new Error( 'RFLink not available' ) );
+		__fncall( this, callback, new Error( 'RFLink not available' ), new Date().getTime(), 0 );
 	}
 }
 
@@ -392,7 +400,7 @@ rflink.TriggerExecution = function() {
 		let cmd = this.commands[0];
 		if ( ! cmd.executing ) {
 			log.info( "Sending command '%s'", cmd.command );
-			cmd.executing = new Date();
+			cmd.executing = new Date().getTime() + this.config.send_latency;
 			this.port.write( `10;${cmd.command};\r\n`, ( error ) => {
 				if ( error ) {
 					// serious error - we will restart the connection
@@ -400,7 +408,7 @@ rflink.TriggerExecution = function() {
 					this.status.lastError = new Date();
 					this.status.errorCount++;
 					this.commands.shift();
-					__fncall( this, cmd.callback, error );
+					__fncall( this, cmd.callback, error, cmd.executing, Math.max( new Date().getTime() - cmd.executing, 0 ) );
 					this.Restart();
 				}
 				else if ( cmd.command.toUpperCase() === 'REBOOT' ) {
@@ -419,7 +427,7 @@ rflink.CompleteExecution = function( error ) {
 			log.debug( "Completing execution of command '%s'", cmd.command );
 			this.status.confirmCount++;
 			this.commands.shift();
-			__fncall( this, cmd.callback, error );
+			__fncall( this, cmd.callback, error, cmd.executing, Math.max( new Date().getTime() - cmd.executing, 0 ) );
 		}
 		else {
 			log.warn( "CANARY: CompleteExecution without command in execution" );

@@ -31,7 +31,7 @@ class SensorDevice extends Device {
 	// overridable: publishConfig will be called to publish a HASS configation message
 	publishConfig() {
 		// each sensor should have at least a status entity
-		new hass.Sensor( this, 'Status' ).setIcon().setValue( 'msgrate' ).setUnit( 'Msgs/h' ).publish();
+		new hass.Sensor( this, 'Status' ).setIcon().setJsonValueTemplate( 'msgrate' ).setUnit( 'Msgs/h' ).publish();
 		// create sensor/binary_sensor entity for each measuring
 		this.features.forEach( ( feature ) => {
 			switch ( feature ) {
@@ -53,7 +53,7 @@ class SensorDevice extends Device {
 					log.error( "Sensor Feature '%s' not implemented for autocreation", feature );
 					break;
 				case 'uv':
-					new hass.Sensor( this, 'UV', 'Ultraviolet' ).setValue( 'uv' ).setIcon( 'mdi:white-balance-sunny' ).publish();
+					new hass.Sensor( this, 'UV', 'Ultraviolet' ).setJsonValueTemplate( 'uv' ).setIcon( 'mdi:white-balance-sunny' ).publish();
 					break;
 				case 'lux':
 					new hass.Photometer( this ).publish();
@@ -62,22 +62,22 @@ class SensorDevice extends Device {
 					new hass.Battery( this ).publish();
 					break;
 				case 'rain':
-					new hass.Sensor( this, 'Rain' ).setValue( 'rain' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
+					new hass.Sensor( this, 'Rain' ).setJsonValueTemplate( 'rain' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
 					break;
 				case 'rainrate':
-					new hass.Sensor( this, 'Rain_Rate' ).setValue( 'rainrate' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
+					new hass.Sensor( this, 'Rain_Rate' ).setJsonValueTemplate( 'rainrate' ).setUnit( 'mm' ).setIcon( 'mdi:weather-rainy' ).publish();
 					break;
 				case 'winsp':
-					new hass.Sensor( this, 'Wind_Speed' ).setValue( 'wind_speed' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
+					new hass.Sensor( this, 'Wind_Speed' ).setJsonValueTemplate( 'wind_speed' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
 					break;
 				case 'awinsp':
-					new hass.Sensor( this, 'Wind_Speed_Average' ).setValue( 'wind_speed_average' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
+					new hass.Sensor( this, 'Wind_Speed_Average' ).setJsonValueTemplate( 'wind_speed_average' ).setUnit( 'km/h' ).setIcon( 'mdi:weather-windy' ).publish();
 					break;
 				case 'wings':
-					new hass.Sensor( this, 'Wind_Gust' ).setValue( 'wind_gust' ).setUnit( 'km/h' ).setIcon( 'mdi:sign-direction' ).publish();
+					new hass.Sensor( this, 'Wind_Gust' ).setJsonValueTemplate( 'wind_gust' ).setUnit( 'km/h' ).setIcon( 'mdi:sign-direction' ).publish();
 					break;
 				case 'windir':
-					new hass.Sensor( this, 'Wind_Direction' ).setValue( 'wind_direction' ).setUnit( '°' ).setIcon( 'mdi:sign-direction' ).publish();
+					new hass.Sensor( this, 'Wind_Direction' ).setJsonValueTemplate( 'wind_direction' ).setUnit( '°' ).setIcon( 'mdi:sign-direction' ).publish();
 					break;
 				case 'winchl':
 					new hass.Thermometer( this, 'wind_chill', "Wind_Chill" ).publish();
@@ -97,7 +97,7 @@ class SensorDevice extends Device {
 					new hass.MotionDetector( this ).publish()
 					break;
 				case 'co2':
-					new hass.Sensor( this, 'CO2', "co2 Air Quality" ).setValue( 'co' ).setIcon( 'mdi:periodic-table-co2' ).publish();
+					new hass.Sensor( this, 'CO2', "co2 Air Quality" ).setJsonValueTemplate( 'co' ).setIcon( 'mdi:periodic-table-co2' ).publish();
 					break;
 				case 'sound':
 					// new hass.SignalStrength( this, 'noise', "Noise_Level" ).setIcon( 'mdi:speaker-wireless' ).publish();
@@ -108,22 +108,22 @@ class SensorDevice extends Device {
 					new hass.Powermeter( this ).setIcon( 'mdi:gauge' ).publish();
 					break;
 				case 'current':
-					new hass.Sensor( this, 'Current' ).setValue( 'current' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
+					new hass.Sensor( this, 'Current' ).setJsonValueTemplate( 'current' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'current2':
-					new hass.Sensor( this, 'Current_P2', "Current Phase 2" ).setValue( 'current_phase2' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
+					new hass.Sensor( this, 'Current_P2', "Current Phase 2" ).setJsonValueTemplate( 'current_phase2' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'current3':
-					new hass.Sensor( this, 'Current_P3', "Current Phase 3" ).setValue( 'current_phase3' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
+					new hass.Sensor( this, 'Current_P3', "Current Phase 3" ).setJsonValueTemplate( 'current_phase3' ).setUnit( 'A' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'dist':
-					new hass.Sensor( this, 'Distance' ).setValue( 'distance' ).setIcon( 'mdi:map-marker-distance' ).publish();
+					new hass.Sensor( this, 'Distance' ).setJsonValueTemplate( 'distance' ).setIcon( 'mdi:map-marker-distance' ).publish();
 					break;
 				case 'meter':
-					new hass.Sensor( this, 'Meter' ).setValue( 'meter' ).setIcon( 'mdi:gauge' ).publish();
+					new hass.Sensor( this, 'Meter' ).setJsonValueTemplate( 'meter' ).setIcon( 'mdi:gauge' ).publish();
 					break;
 				case 'volt':
-					new hass.Sensor( this, 'Voltage' ).setValue( 'voltage' ).setUnit( 'V' ).setIcon( 'mdi:flash' ).publish();
+					new hass.Sensor( this, 'Voltage' ).setJsonValueTemplate( 'voltage' ).setUnit( 'V' ).setIcon( 'mdi:flash' ).publish();
 					break;
 				case 'rgbw':
 					// RGBW=9999 => Milight: provides 1 byte color and 1 byte brightness value

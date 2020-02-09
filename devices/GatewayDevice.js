@@ -30,7 +30,7 @@ class GatewayDevice extends BaseDevice {
 		new hass.Gateway( this ).publish();
 	}
 
-	// overridable: executeCOmmand will be called when the device receives an mqtt command message
+	// overridable: executeCommand will be called when the device receives an mqtt command message
 	executeCommand( command, message ) {
 		if ( command == 'RAW' ) {
 			log.info( "Sending raw command '%s'...", message );

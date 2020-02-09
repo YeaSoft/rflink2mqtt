@@ -177,8 +177,9 @@ class DeviceList {
 			// first time online
 			this.inited = true;
 			this.devices.forEach( device => {
-				device.initialize();
-				device.setGatewayOnline( status.active );
+				device.initialize( () => {
+					device.setGatewayOnline( status.active );
+				} );
 			} );
 		}
 	}

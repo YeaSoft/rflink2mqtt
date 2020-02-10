@@ -39,7 +39,7 @@ class CoverDevice extends Device {
 		this.call( callback );
 	}
 
-	// overridable: publishConfig will be called to publish a HASS configation message
+	// overridable: publishConfig will be called to publish a HASS configuration message
 	publishConfig( callback ) {
 		new hass.Cover( this ).publish( callback );
 	}

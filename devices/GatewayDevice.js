@@ -25,7 +25,7 @@ class GatewayDevice extends BaseDevice {
 		this.status = {};
 	}
 
-	// overridable: publishConfig will be called to publish a HASS configation message
+	// overridable: publishConfig will be called to publish a HASS configuration message
 	publishConfig() {
 		new hass.Gateway( this ).publish();
 	}

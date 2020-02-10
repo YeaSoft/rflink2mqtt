@@ -28,7 +28,7 @@ class SensorDevice extends Device {
 		this.expiration = this._get_expiration( cfg );
 	}
 
-	// overridable: publishConfig will be called to publish a HASS configation message
+	// overridable: publishConfig will be called to publish a HASS configuration message
 	publishConfig() {
 		// each sensor should have at least a status entity
 		new hass.Sensor( this, 'Status' ).setIcon().setJsonValueTemplate( 'msgrate' ).setUnit( 'Msgs/h' ).publish();

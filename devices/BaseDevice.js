@@ -36,7 +36,7 @@ class BaseDevice {
 	// overridable: initialize will be called when the device is online for the first time
 	initialize( callback ) { this.call( callback ); }
 
-	// overridable: publishConfig will be called to publish a HASS configation message
+	// overridable: publishConfig will be called to publish a HASS configuration message
 	publishConfig() {}
 
 	// overridable: executeCommand will be called when the device receives an mqtt command message

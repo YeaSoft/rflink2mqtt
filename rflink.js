@@ -15,29 +15,6 @@ const readline		= require( '@serialport/parser-readline' );
 const log			= require( path.join( __dirname, 'app-logger' ) );
 const gateway		= require( path.join( __dirname, 'gateway' ) );
 
-// helper
-function __fncallback( cb ) { return typeof cb === 'function' ? cb : () => {}; }
-function __fncall( th, cb, ...args) { if ( typeof cb === 'function' ) cb.apply( th, args ); }
-
-function decompose( elements ) {
-	let result = {};
-	let unknown = 0;
-	elements.forEach( element => {
-		if ( element ) {
-			let parts = element.split( '=' );
-			if ( parts.length > 1 ) {
-				let name = parts.shift().toLowerCase();
-				result[ name ] = parts.join('=');
-			}
-			else {
-				++unknown;
-				result[ 'unknown' + unknown.toString() ] = element;
-			}
-		}
-	} );
-	return result;
-}
-
 // module interface
 var rflink = {
 	ready: false,
@@ -64,6 +41,76 @@ var rflink = {
 		deadCount: 0,
 	},
 };
+
+// helper functions
+rflink.call = function( callback, ...args) {
+	if ( typeof callback === 'function' ) {
+		callback.apply( this, args );
+	}
+}
+
+rflink.decompose = function( elements ) {
+	let result = {};
+	let unknown = 0;
+	elements.forEach( element => {
+		if ( element ) {
+			let parts = element.split( '=' );
+			if ( parts.length > 1 ) {
+				let name = parts.shift().toLowerCase();
+				result[ name ] = parts.join('=');
+			}
+			else {
+				++unknown;
+				result[ 'unknown' + unknown.toString() ] = element;
+			}
+		}
+	} );
+	return result;
+}
+
+rflink.parse_debug = function( time, elements ) {
+	let type = elements.shift();
+	let value = this.decompose( elements );
+	let debug = {
+		name: 'rflink',
+		id: this.config.id,
+		Time: time.toISOString(),
+		ts: time.getTime(),
+		type: type,
+		pulses: 0,
+		durations: []
+	};
+	if ( parseInt( value.pulses ) != NaN ) {
+		debug.pulses = parseInt( value.pulses );
+		if ( typeof value[ 'pulses(usec)' ] === 'string' ) {
+			debug.durations = value[ 'pulses(usec)' ].split( ',' );
+			if ( debug.durations.length == 1 ) {
+				// QRFDEBUG=ON
+				if ( debug.durations[0].length == debug.pulses * 2 ) {
+					// regular pattern
+					let durations = [];
+					for ( let i = 0; i < debug.pulses; i++ ) {
+						let v = parseInt( debug.durations[0].slice( i * 2, ( i + 1 ) * 2 ), 16 );
+						if ( v === NaN ) {
+							// something went wrong. leave as it is and return
+							debug.durations = debug.durations[0];
+							debug.qrfdebug = true;
+							return debug;
+						}
+						durations.push( v * 30 );
+					}
+					debug.durations = durations;
+				}
+				else {
+					// this must be the pulses=290 bug leave as it is and return
+					debug.durations = debug.durations[0];
+					debug.qrfdebug = true;
+				}
+			}
+		}
+	}
+	return debug;
+}
 
 rflink.SetActive = function( active ) {
 	active = active ? true : false;
@@ -155,54 +202,11 @@ rflink.Start = function() {
 			}
 		} );
 	}
-	this.port.rfReboot = function() {
-		this.SetActive( false );
-		this.rfSend( '10;REBOOT;' );
-	}
 	this.port.rfPing = function() {
 		this.rfSend( '10;PING;' );
 	}
 	this.port.rfVersion = function() {
 		this.rfSend( '10;VERSION;' );
-	}
-	this.port.rfDebug = function( mode, state ) {
-		if ( mode === 'U' ) {
-			mode = '10;RFUDEBUG=';
-		}
-		else if ( mode === 'Q' ) {
-			mode = '10;QRFDEBUG=';
-		}
-		else {
-			mode = '10;RFDEBUG=';
-		}
-		if ( state ) {
-			mode += 'ON;';
-		}
-		else {
-			mode += 'OFF';
-		}
-		this.rfSend( mode );
-	}
-	this.port.rfTriStateInvert = function() {
-		this.rfSend( '10;TRISTATEINVERT;' );
-	}
-	this.port.rfRtsClean = function() {
-		this.rfSend( '10;RTSCLEAN;' );
-	}
-	this.port.rfRtsRecClean = function( code ) {
-		value = Math.florr( code );
-		if ( value != NaN ) {
-			this.rfSend( '10;RTSRECCLEAN=' + value.toString() + ';' );
-		}
-	}
-	this.port.rfRtsShow = function() {
-		this.rfSend( '10;RTSSHOW;' );
-	}
-	this.port.rfRtsInvert = function() {
-		this.rfSend( '10;RTSINVERT;' );
-	}
-	this.port.rfRtsLogTx = function() {
-		this.rfSend( '10;RTSLONGTX;' );
 	}
 
 	// setup event handlers
@@ -265,7 +269,7 @@ rflink.Start = function() {
 				}
 			}
 			if ( elements[0].split('=')[0] == 'VER' ) {
-				let ver = decompose( elements );
+				let ver = this.decompose( elements );
 				this.status.version = ver.ver;
 				this.status.revision = ver.rev;
 				this.status.build = ver.build;
@@ -290,25 +294,25 @@ rflink.Start = function() {
 						this.status.messageCount--;
 						break;
 					case 'DEBUG':
-						// TODO: do something...
+						// fill debug structure
+						value = this.parse_debug( time, elements );
+						gateway.emit( 'rfdata', value );
 						break;
 					case 'VER':
 						// version response
-						this.CompleteExecution();
-						value = decompose( elements );
+						value = this.decompose( elements );
 						this.status.version = value.ver;
 						this.status.revision = value.rev;
 						this.status.build = value.build;
+						this.CompleteExecution( undefined, value );
 						break;
 					case 'RFDEBUG':
 					case 'RFUDEBUG':
 					case 'QRFDEBUG':
-						this.CompleteExecution();
-						// TODO: handle debug activation/deactivation
-						value = first[1];
+						this.CompleteExecution( undefined, first[1] );
 						break;
 					case 'RTS CLEANED':
-						this.CompleteExecution();
+						this.CompleteExecution( undefined, first[0] );
 						break;
 					case 'RECORD 00 CLEANED':
 					case 'RECORD 01 CLEANED':
@@ -326,13 +330,12 @@ rflink.Start = function() {
 					case 'RECORD 13 CLEANED':
 					case 'RECORD 14 CLEANED':
 					case 'RECORD 15 CLEANED':
-						this.CompleteExecution();
+						this.CompleteExecution( undefined, first[0] );
 						break;
 					case 'RTSINVERT':
 					case 'RTSLONGTX':
 					case 'TRISTATEINVERT':
-						this.CompleteExecution();
-						value = first[1];
+						this.CompleteExecution( undefined, first[1] );
 						break;
 					case 'CMD UNKNOWN':
 						this.CompleteExecution( new Error( "Command unknown" ) );
@@ -342,7 +345,7 @@ rflink.Start = function() {
 						break;
 					default:
 						name = elements.shift();
-						value = decompose( elements );
+						value = this.decompose( elements );
 						value.name = name;
 						value.Time = time.toISOString();
 						value.ts = time.getTime();
@@ -391,7 +394,7 @@ rflink.SendRawCommand = function( command, callback ) {
 		this.TriggerExecution();
 	}
 	else {
-		__fncall( this, callback, new Error( 'RFLink not available' ), new Date().getTime(), 0 );
+		this.call( callback, new Error( 'RFLink not available' ), undefined, new Date().getTime(), 0 );
 	}
 }
 
@@ -408,7 +411,7 @@ rflink.TriggerExecution = function() {
 					this.status.lastError = new Date();
 					this.status.errorCount++;
 					this.commands.shift();
-					__fncall( this, cmd.callback, error, cmd.executing, Math.max( new Date().getTime() - cmd.executing, 0 ) );
+					this.call( cmd.callback, error, undefined, cmd.executing, Math.max( new Date().getTime() - cmd.executing, 0 ) );
 					this.Restart();
 				}
 				else if ( cmd.command.toUpperCase() === 'REBOOT' ) {
@@ -420,14 +423,14 @@ rflink.TriggerExecution = function() {
 	}
 }
 
-rflink.CompleteExecution = function( error ) {
+rflink.CompleteExecution = function( error, data ) {
 	if ( this.commands.length ) {
 		let cmd = this.commands[0];
 		if ( cmd.executing ) {
 			log.debug( "Completing execution of command '%s'", cmd.command );
 			this.status.confirmCount++;
 			this.commands.shift();
-			__fncall( this, cmd.callback, error, cmd.executing, Math.max( new Date().getTime() - cmd.executing, 0 ) );
+			this.call( cmd.callback, error, data, cmd.executing, Math.max( new Date().getTime() - cmd.executing, 0 ) );
 		}
 		else {
 			log.warn( "CANARY: CompleteExecution without command in execution" );
@@ -467,7 +470,7 @@ rflink.Stop = function( callback ) {
 		if ( this.port ) delete this.port;
 		if ( this.parser ) delete this.parser;
 		gateway.emit( 'rfstop', this.status );
-		__fncall( this, callback, error );
+		this.call( callback, error );
 	}
 
 	if ( this.port ) {

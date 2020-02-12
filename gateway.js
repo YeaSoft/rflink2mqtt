@@ -141,7 +141,9 @@ gateway.Start = function() {
 	if ( ! this.rflink ) {
 		this.rflink = rflink.Start();
 	}
-	return true;
+	// ugly workaround
+	this.rflink.config.id = this.config.id;
+	return this.mqtt && this.rflink;
 }
 
 gateway.Stop = function( callback ) {

@@ -21,7 +21,7 @@ const BaseDevice	= require( path.join( __dirname, 'BaseDevice' ) );
 class GatewayDevice extends BaseDevice {
 	constructor( dl, name, config ) {
 		super( dl, 'gateway', name, config );
-		this.commands = [ 'RAW' ]
+		this.commands = [ 'RAW', 'RFDEBUG', 'RFUDEBUG', 'QRFDEBUG', 'TRISTATEINVERT', 'RTSCLEAN', 'RTSRECCLEAN', 'RTSSHOW', 'RTSINVERT', 'RTSLONGTX' ]
 		this.status = {};
 	}
 
@@ -32,16 +32,68 @@ class GatewayDevice extends BaseDevice {
 
 	// overridable: executeCommand will be called when the device receives an mqtt command message
 	executeCommand( command, message ) {
-		if ( command == 'RAW' ) {
-			log.info( "Sending raw command '%s'...", message );
-			rflink.SendRawCommand( message, ( error ) => {
-				if ( error ) {
-					log.error( "Raw command '%s' returned '%s'", message, error.message );
+		switch ( command ) {
+			case 'RTSCLEAN':
+			case 'RTSSHOW':
+			case 'RTSINVERT':
+			case 'RTSLONGTX':
+			case 'TRISTATEINVERT':
+				// commands with no parameters
+				rflink.SendRawCommand( command, ( error, data ) => {
+					if ( error ) {
+						this.setCommandError( error );
+						log.error( "Failed to send command cmnd/%s to '%s'", command, this.name );
+					}
+					else {
+						this.setCommandResult( data );
+					}
+				} );
+				break;
+			case 'RFDEBUG':
+			case 'RFUDEBUG':
+			case 'QRFDEBUG':
+				// ON/OFF commands
+				message = message.toUpperCase();
+				if ( ['ON','OFF'].includes( message ) ) {
+					rflink.SendRawCommand( `${command}=${message}`, ( error, data ) => {
+						if ( error ) {
+							this.setCommandError( error );
+							log.error( "Failed to send command cmnd/%s '%s' to '%s'", command, message, this.name );
+						}
+						else {
+							this.setCommandResult( data );
+						}
+					} );
 				}
 				else {
-					log.info( "Raw command '%s' returned OK", message );
+					this.setCommandError( `Invalid setting '${message}' supplied` );
+					log.warn( "Ignoring invalid cmnd/%s setting '%s' sent to '%s'", command, message, this.name );
 				}
-			} );
+				break;
+			case 'RAW':
+				log.info( "Sending raw command '%s'...", message );
+				rflink.SendRawCommand( message, ( error ) => {
+					if ( error ) {
+						this.setCommandError( error );
+						log.error( "Raw command '%s' returned '%s'", message, error.message );
+					}
+					else {
+						this.setCommandResult( message );
+						log.info( "Raw command '%s' returned OK", message );
+					}
+				} );
+				break;
+			default:
+				this.setCommandError( "Command unknown" );
+				return log.warn( "Ignoring unsupported cmnd/%s sent to '%s'", command, this.name );
+		}
+	}
+
+	// overridable: processData will be called when the device gets data from the RFLink gateway
+	processData( data, now ) {
+		switch ( data.type ) {
+			case 'DEBUG':
+				return this.publish( 'tele/DEBUG', JSON.stringify( data ) );
 		}
 	}
 

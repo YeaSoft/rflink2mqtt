@@ -33,10 +33,13 @@ class CoverDevice extends Device {
 			if ( this.isDeferPosition() ) {
 				let target = this.getDeferPosition();
 				this.clearDeferPosition();
+				this.last_cmnd = 'POSITION';
 				this.startMove( target );
 			}
 		}
-		this.call( callback );
+		else {
+			this.call( callback );
+		}
 	}
 
 	// overridable: publishConfig will be called to publish a HASS configuration message
@@ -76,21 +79,29 @@ class CoverDevice extends Device {
 	}
 
 	executeCommandSimple( command, message ) {
-		if ( command === 'CONTROL' ) {
-			message = message.toUpperCase();
-			if ( ['UP','DOWN','STOP'].includes( message ) ) {
-				rflink.SendCommand( this.rfid, message, error => {
-					if ( error ) {
-						log.error( "Failed to send command cmnd/CONTROL '%s' to '%s'", message, this.name );
-					}
-					else {
-						this.processData( { cmd: command } );
-					}
-				} );
-			}
-			else {
-				log.warn( "Ignoring unknown command cmnd/CONTROL '%s' sent to '%s'", message, this.name );
-			}
+		switch ( command ) {
+			case 'CONTROL':
+				message = message.toUpperCase();
+				if ( ['UP','DOWN','STOP'].includes( message ) ) {
+					rflink.SendCommand( this.rfid, message, error => {
+						if ( error ) {
+							this.setCommandError( error );
+							log.error( "Failed to send command cmnd/CONTROL '%s' to '%s'", message, this.name );
+						}
+						else {
+							this.setCommandResult( message );
+							this.processData( { cmd: command } );
+						}
+					} );
+				}
+				else {
+					this.setCommandError( `Invalid control operation '${message}' supplied` );
+					log.warn( "Ignoring unknown cmnd/CONTROL operation '%s' sent to '%s'", message, this.name );
+				}
+				break;
+			default:
+				this.setCommandError( "Command unknown" );
+				return log.warn( "Ignoring unsupported cmnd/%s sent to '%s'", command, this.name );
 		}
 	}
 
@@ -116,17 +127,26 @@ class CoverDevice extends Device {
 					case 'STOP':
 						return this.stopMove();
 					default:
+						this.setCommandError( `Invalid control operation '${message}'s upplied` );
 						return log.warn( "Ignoring unknown command '%' on cmnd/CONTROL sent to '%s'", message, this.name );
 				}
 			case 'POSITION':
+			case 'RECALIBRATE':
 				let position = this.getNum( message );
 				if ( position !== NaN ) {
-					return this.startMove( position );
+					if ( command === 'POSITION' ) {
+						return this.startMove( position );
+					}
+					else {
+						return this.recalibrate( position );
+					}
 				}
+				this.setCommandError( `Invalid position '${message}' supplied` );
 				return log.warn( "Ignoring invalid position '%s' on cmnd/POSITION sent to '%s'", message, this.name );
 			case 'RESET':
 				return this.recalibrate();
 			default:
+				this.setCommandError( "Command unknown" );
 				return log.warn( "Ignoring unsupported cmnd/%s sent to '%s'", command, this.name );
 		}
 	}
@@ -193,6 +213,7 @@ class CoverDevice extends Device {
 			if ( error ) {
 				this.clearRecalibrationTarget();
 				this.setPositionUncertain();
+				this.setCommandError( "Recalibration failed" );
 				return log.error( "Recalibration of '%s' failed.", this.name );
 			}
 			this.setRecalibrationTimer( () => {
@@ -281,10 +302,12 @@ class CoverDevice extends Device {
 			this.startMoving( full_time, duration, new Date().getTime(), true );
 		}
 		else {
-			rflink.SendCommand( this.rfid, command, ( error, sent, acktime ) => {
+			rflink.SendCommand( this.rfid, command, ( error, data, sent, acktime ) => {
 				if ( error ) {
+					this.setCommandError( error );
 					return log.error( "Failed to send %s command to cover '%s'", command, this.name );
 				}
+				this.setCommandResult( target == 0 || target == 100 ? command : target );
 				this.startMoving( full_time, Math.max( duration - acktime, 1), sent, target == 0 || target == 100, acktime );
 			} );
 		}
@@ -304,13 +327,18 @@ class CoverDevice extends Device {
 			this.call( callback );
 		}
 		else {
-			rflink.SendCommand( this.rfid, 'STOP', ( error, sent, acktime ) => {
+			rflink.SendCommand( this.rfid, 'STOP', ( error, data, sent, acktime ) => {
 				if ( error ) {
-					log.error( "Failed to stop moving cover '%s' - position uncertain" );
+					this.setCommandError( error );
+					log.error( "Failed to stop moving cover '%s' - position uncertain", this.name );
 					this.endMoving( sent, -1 );
 					if ( this.isMoving() ) this.setPositionUncertain();
 				}
 				else {
+					if ( this.last_cmnd === 'CONTROL' ) {
+						// set command result only on explicit stop
+						this.setCommandResult( 'STOP' );
+					}
 					this.endMoving( sent, acktime );
 				}
 				this.call( callback, error );
@@ -329,7 +357,8 @@ class CoverDevice extends Device {
 		mycfg.down_full = mycfg.down + mycfg.down_close;
 		if ( mycfg.up > 0 && mycfg.down > 0 ) {
 			this.advanced = true;
-			this.commands = [ 'CONTROL', 'POSITION', 'RESET' ];
+			this.commands = [ 'CONTROL', 'POSITION', 'RECALIBRATE', 'RESET' ];
+			this.state_key = 'POSITION';
 			this.state = undefined;
 			this.position = undefined;
 			this.direction_time = 0;
@@ -338,6 +367,7 @@ class CoverDevice extends Device {
 		else {
 			this.advanced = false;
 			this.commands = [ 'CONTROL' ];
+			this.state_key = 'STATE';
 			this.state = undefined;
 		}
 	}

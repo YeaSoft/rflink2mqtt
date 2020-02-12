@@ -30,6 +30,8 @@ class BaseDevice {
 		this.mrate = 0;
 		this.count = 0;
 		this.commands = [];
+		this.state_key = undefined;
+		this.last_cmnd = undefined;
 		this.basetopic = gateway.config.prefix + this.name + '/';
 	}
 
@@ -84,6 +86,7 @@ class BaseDevice {
 		if ( topic.startsWith( cmndtopic ) ) {
 			let command = topic.substring( cmndtopic.length );
 			if ( this.commands.includes( command ) ) {
+				this.last_cmnd = command;
 				this.executeCommand( command, message );
 			}
 		}
@@ -127,6 +130,31 @@ class BaseDevice {
 		}
 	}
 
+	setCommandError( error, callback ) {
+		if ( this.last_cmnd ) {
+			let resultObj = {};
+			resultObj[ this.last_cmnd ] = 'ERROR';
+			resultObj[ 'ERROR' ] = error instanceof Error ? error.message : error;
+			this.publishResult( resultObj, callback );
+			this.last_cmnd = undefined;
+		}
+		else {
+			this.call( callback );
+		}
+	}
+
+	setCommandResult( result, callback ) {
+		if ( this.last_cmnd ) {
+			let resultObj = {};
+			resultObj[ this.last_cmnd ] = result;
+			this.publishResult( resultObj, callback );
+			this.last_cmnd = undefined;
+		}
+		else {
+			this.call( callback );
+		}
+	}
+
 	publishOnline( callback ) {
 		let message = this.online ? 'Online' : 'Offline';
 		this.publish( 'tele/LWT', message, true, callback );
@@ -139,16 +167,19 @@ class BaseDevice {
 		}
 		else {
 			this.publish( 'tele/STATE', JSON.stringify( state ), false, callback );
+			if ( this.state_key in state ) {
+				this.publish( `stat/${this.state_key}`, state[this.state_key].toString(), false );
+			}
 		}
+	}
+
+	publishResult( result, callback ) {
+		this.publish( 'stat/RESULT', JSON.stringify( result ), false, callback );
 	}
 
 	publishHassState( callback ) {
 		let hass_state = this.getHassState();
 		this.publish( 'tele/HASS_STATE', JSON.stringify( hass_state ), false, callback );
-	}
-
-	publish_config_message( type, config, callback ) {
-		mqtt.Publish( 'homeassistant/' + type + '/' + config.unique_id + '/config', JSON.stringify( config ), true, callback );
 	}
 
 	publish( topic, message, retain, callback ) {

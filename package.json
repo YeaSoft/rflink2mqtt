@@ -1,6 +1,6 @@
 {
   "name": "rflink2mqtt",
-  "version": "0.1.16",
+  "version": "0.1.20",
   "description": "Gateway between RFLINK and MQTT",
   "main": "index.js",
   "scripts": {

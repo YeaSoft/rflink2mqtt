@@ -30,7 +30,7 @@ class DeviceList {
 
 	init( cfg ) {
 		cfg.class = 'gateway';
-		cfg.rfid = 'RFLink Gateway';
+		cfg.rfid = `rflink:${cfg.id}`;
 		// this.empty();
 		this.gateway = this.register( cfg.name, cfg );
 	}
@@ -56,7 +56,7 @@ class DeviceList {
 				return undefined;
 		}
 		this.devices.push( device );
-		this.findmap[device.rfid] = device;
+		this.findmap[ device.rfid ] = device;
 		return device;
 	}
 

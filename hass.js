@@ -79,7 +79,7 @@ class Cover extends BaseConfig {
 		this.set( 'payload_stop', 'STOP' );
 		if ( device.advanced ) {
 			// advanced mode
-			this.setJsonValueTemplate( 'POSITION' );
+			this.setJsonPositionTemplate( 'POSITION' );
 			this.unset( 'state_topic' );
 			this.set( 'set_position_topic', "~cmnd/POSITION" );
 			this.set( 'position_topic', "~tele/STATE" );
@@ -94,6 +94,7 @@ class Cover extends BaseConfig {
 			this.set( 'state_closed', 'Closed' );
 		}
 	}
+	setJsonPositionTemplate( valueKey ) { return this.set( 'position_template', `{{value_json.${valueKey}}}` ); }
 }
 
 // generic sensors
